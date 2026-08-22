@@ -118,36 +118,12 @@ HTTP 网络细节：
 
 ---
 
-## 四、本次改动后的实测（切到 sensenova-6.8-flash-lite 后）
-
-`~/.jcode/config.toml`：`default_model = "st/sensenova-6.8-flash-lite"`，`openai_native_compaction_threshold_tokens = 100000`。备份 `config.toml.bak.20260823-011525`。config 文件修改后自动 hot-reload（`config()` 用指纹缓存 + 1s 检查间隔）。
-
-直连 `http://localhost:8090/v1` 测试（与 jcode 同一路由，绕过 TUI 层，直接量化代理+上游表现）：
-
-| 场景 | 结果 |
-|------|------|
-| 非流式单次（13 prompt tokens） | HTTP 200，TTFH **0.58s**，body 706B，含 `reasoning_content` |
-| 流式 3 句回答 | HTTP 200，TTFH **3.23s**（模型先出 thinking），总耗时 3.49s，body 3534B |
-| 连发 5 次 ping（`stream=false`） | **5/5 全 200**，TTFH 0.46 / 0.43 / 0.74 / 0.37 / 0.45s |
-
-与之前的 `mscope/glm-5.2` 对比：
-
-| | 之前（mscope/glm-5.2） | 现在（st/sensenova-6.8-flash-lite） |
-|---|---|---|
-| 连续 5 次 200 率 | 约 1/5（多 429） | 5/5 |
-| 首次响应耗时 | 4-13s（多为 429，非真实首字） | 0.37-0.74s（真实首字） |
-| TTFH 稳定性 | 抖得厉害，且多为假性（429） | 稳定，方差小 |
-
-结论：切到 `st/sensenova-6.8-flash-lite` 后**请求质量显著改善，RPM 窗口外的稳定通道**，5 次连发全部即时成功，验证了"maki 用同系列 6.7 渠道稳定"的判断。
-
-> 注：`openai_native_compaction_threshold_tokens` 从 200000 → 100000 的效果需跑长会话才能观测（更早日前压缩，把单请求 tokens 压到 RPM 窗口外）；本次改动是"请求更小 + 模型更稳"双管齐下。
-
----
-
-## 五、值得注意的架构观察
+## 四、值得注意的架构观察
 
 1. **provider 与 runtime 拆成两层**：`jcode-provider-<vendor>` 处理协议（构造 request / 解析 response），`jcode-provider-<vendor>-runtime` 处理传输/重试/流式。跨 provider 共用 `jcode-provider-core`（retry_after、fingerprint、attempt_tracker、transport）。
 2. **OpenAI-compatible 走 OpenRouter 兼容代码路径**：`axonhub`（type=open-ai-compatible）走 `jcode-provider-openrouter-runtime`，但 `supports_provider_features=false`，因此不带 OpenRouter 专有字段（`provider.routing`、`thinking`），只发 OpenAI 标准 body + `stream_options: {include_usage: true}`。
 3. **compaction 是阈值驱动 + 显式事件**：超过 `openai_native_compaction_threshold_tokens` 时会压缩历史消息，压缩结果以 `reasoning_content` / `encrypted_content` 形态插入会话；本次把阈值 200000 → 100000，期望更早压缩、把单请求压到 RPM 窗口外。
 4. **429 退避目前不够激进**：`retry_backoff_cap_secs=30`，而上游 RPM 窗口实测 60s+，建议调到 60。
 5. **自定义 provider 不走 failover**：`same_provider_account_failover` 只对"多账号同厂商"生效，自定义 openai-compatible 只有单一路由/单一 key，失败只能反复打同一个代理。
+
+> 本次改动后的实测验证已归入 `260822-axonhub-429.md` §四，避免重复。
