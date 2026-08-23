@@ -129,7 +129,73 @@
 
 ---
 
-## 四、建议措施
+## 四、清理脚本使用方法
+
+配套脚本位于同目录: **`260823-large-files-cleanup.sh`** (367 行, 已 `chmod +x`)
+
+### 前置准备
+
+```bash
+# 1. 安装 BFG Repo-Cleaner
+#    macOS:  brew install bfg
+#    Ubuntu: apt install bfg
+#    通用:   下载 https://rtyley.github.io/bfg-repo-cleaner/ 后
+#            java -jar bfg-*.jar  或  ln -s bfg-*.jar /usr/local/bin/bfg
+
+# 2. 确保 Java 11+ 可用
+java -version
+
+# 3. 同步最新代码
+cd /path/to/fk-jcode
+git pull --rebase origin sam-custom
+```
+
+### 执行清理
+
+```bash
+./docs/sam/260823-large-files-cleanup.sh
+```
+
+脚本交互流程:
+
+| 步骤 | 操作 | 效果 |
+|---|---|---|
+| **前置检查** | 检测 BFG / Java / 工作区状态 | 不干净则自动 stash |
+| **Step 1 — 搬移** | 工作区 ≥1MiB 文件 → `../fk-jcode-dropBig/` (保留目录结构) | `crates/` 下字体等保留不动 |
+| **Step 2 — git rm** | 从索引移除已搬移文件并提交 | 产生 `chore: remove large binary assets` commit |
+| **Step 3 — BFG** | 扫描全部历史，`ios/.build*` 用 `--delete-directories`，其余逐个 `--delete-files`，跳过 `crates/` | 从所有分支历史中剥离大文件 |
+| **Step 4 — gc** | `reflog expire --all` + `git gc --prune=now --aggressive` | 压缩对象库，显示前后大小对比 |
+| **Step 5 — 验证** | 扫描确认无残留 | 列出保留的 `crates/` 文件 |
+
+### 清理范围
+
+| 路径模式 | 动作 |
+|---|---|
+| `ios/.build*/` | ❌ 删除 (iOS 构建缓存) |
+| `ios/.build-ios*/` | ❌ 删除 |
+| `jcode_replay*.mp4` | ❌ 删除 (根目录录屏) |
+| `assets/readme/*.gif` | ❌ 删除 (演示 GIF) |
+| `assets/demos/**/*.mp4` | ❌ 删除 (演示视频) |
+| `assets/app-icons/Jcode.icns` | ❌ 删除 (图标) |
+| `crates/**/*` | ✅ **保留** (字体等必需资源) |
+
+### 清理后操作
+
+```bash
+# 强制推送 (改写历史)
+git push --force origin sam-custom
+
+# 通知团队 rebase
+# 告知团队成员: git fetch origin && git rebase origin/sam-custom
+```
+
+### 回滚
+
+所有被搬移的文件保留在 `../fk-jcode-dropBig/` 中，按需 `mv` 回仓库即可。
+
+---
+
+## 五、建议措施
 
 | 优先级 | 措施 | 说明 |
 |---|---|---|
@@ -141,7 +207,7 @@
 
 ---
 
-## 五、数据附录
+## 六、数据附录
 
 ```
 历史 blob ≥1MiB: 40 个, 总计 357,508,581 bytes (340.95 MiB)
