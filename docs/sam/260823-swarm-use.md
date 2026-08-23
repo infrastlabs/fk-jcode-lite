@@ -199,3 +199,34 @@ jcode debug -S <agent_session_id> message "新指令"
 ```
 
 注意：无论哪种模式，最终都是模型调用 swarm 工具的某个 action。区别在于前者由用户指定结构，后者由模型基于系统提示自主决策。
+
+### Swarm 历史轮次查看与重入（补充说明）
+
+jcode 区分两种"历史"概念：
+
+#### A. 会话级切换（不同 jcode 窗口/会话）
+
+| 操作 | 语言指令示例 | 实际效果 |
+|------|-------------|----------|
+| 列出所有历史会话 | "列出我之前运行过的会话" | 触发 `/resume` 会话选择器 |
+| 切换到某个会话 | "我想回到 api reviewer 的对话" | `/resume` 后选择对应 session |
+| 查看活跃会话状态 | "哪些会话还在运行？" | `/active` 管理器 |
+| 查看待处理会话 | "还有哪些待处理的？" | `/catchup` 选择器 |
+
+**核心命令**：
+- `/resume` — 打开会话选择器（最常用）
+- `/active` — 管理 working vs ready 状态的会话
+- `/catchup` — 查看挂起的会话
+
+#### B. Swarm 内部 Agent 轮次
+
+| 场景 | 能否重入 | 方法 |
+|------|---------|------|
+| 已完成但未 cleanup 的 agent | ✅ 可以 | TUI: `Alt+N` → `Alt+j/k` 选择 → 输入新指令<br>语言："给 test writer 发消息继续写测试" |
+| 已被 cleanup 的 agent | ❌ 无法直接恢复 | 只能通过 `session_search query="test writer"` 搜索全局历史 |
+| 正在运行的 agent | ✅ 可中断追加 | `/poke` 或直接向 coordinator 描述要追加的任务 |
+
+**关键区别**：
+- `/resume`、`/active`、`/catchup` 是**Jcode 内置 slash command**，直接输入即可，无需自然语言
+- swarm action（list/dm/wake 等）必须通过**自然语言描述意图**，由模型自动调用对应 tool
+- 被 `cleanup` 的 agent 永久无法重入，只能从全局搜索中找记录
