@@ -6,7 +6,7 @@
 
 ---
 
-## 一、Swarm 使用问题综述
+## 一、Swarm 面板切换按键问题：Alt+↑/↓失效根因与 workaround
 
 ### Alt+↑/↓ 在 Swarm 面板中无法选择 Agent
 
