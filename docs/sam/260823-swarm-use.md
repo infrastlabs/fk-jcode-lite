@@ -230,3 +230,116 @@ jcode 区分两种"历史"概念：
 - `/resume`、`/active`、`/catchup` 是**Jcode 内置 slash command**，直接输入即可，无需自然语言
 - swarm action（list/dm/wake 等）必须通过**自然语言描述意图**，由模型自动调用对应 tool
 - 被 `cleanup` 的 agent 永久无法重入，只能从全局搜索中找记录
+
+---
+
+## 四、Swarm 生命周期与多轮管理（2026-08-23 16:11 追加）
+
+### 关键问题回答
+
+#### Q1: Agent 什么时候被 cleanup？
+
+| 场景 | 是否自动清理 | 说明 |
+|------|-------------|------|
+| **完成任务进入 idle** | ❌ **不自动清理** | agent 保留在 swarm 中，可以重入 |
+| **显式调用 `swarm cleanup`** | ✅ 立即清理 | coordinator 主动清理 completed/idle 代理释放槽位 |
+| **`run_plan` 默认行为** | ⚠️ **默认清理** | `run_plan` 的 `retain_agents=false` 时，完成节点后自动停止工作者 |
+| **`run_plan retain_agents=true`** | ❌ 不清理 | 明确保留已完成的工作者 |
+| **会话退出/jcode 关闭** | ❓ 取决于实现 | 需验证，理论上 server 持久化会保留 session |
+
+**核心结论**：**Completed/idle 的 agent 不会被服务器自动清理**。必须显式调用 `swarm cleanup` 或在 `run_plan` 中设置 `retain_agents=false`。
+
+#### Q2: 上一轮 swarm 未被清理前，能开新一轮吗？
+
+**答：可以的，但要注意概念区分。**
+
+jcode 的 swarm 设计是**基于工作目录的单一共享空间**：
+
+```mermaid
+graph TD
+    A[Session A: coordinator] -->|spawn| B[Agent 1: done]
+    A -->|spawn| C[Agent 2: running]
+    A -->|spawn| D[Agent 3: done]
+    
+    A -->|新的任务分解 | E[Agent 4: new task]
+    A -->|spawn| F[Agent 5: new task]
+    
+    style B fill:#90EE90
+    style D fill:#90EE90
+    style E fill:#FFB6C1
+    style F fill:#FFB6C1
+    
+    G[绿色 = 第一轮 completed]
+    H[粉色 = 第二轮 spawned]
+```
+
+**关键机制**：
+- 同一仓库下的所有 jcode 会话共享同一个 `swarm_id`
+- **不存在"上一轮/下一轮"的分隔**：所有 agent 都在同一个 swarm 中
+- 已完成的 agent 标记为 `completed/idle`，新 spawn 的 agent 标记为 `running`
+- 可以通过状态过滤查看不同批次的 agent
+
+#### Q3: 新一轮开始后，如何回到上一轮的 agent？
+
+**方法 1：TUI 面板选择（推荐）**
+```
+Alt+N → 进入 Swarm 面板
+Alt+j/k → 导航到目标 agent（无论它是哪一轮的）
+直接输入指令继续工作
+```
+
+**方法 2：语言指令指定**
+```text
+用户："给 api reviewer 发消息，它审查完接口了吗？"
+↓ 模型识别 session label，自动调用 dm
+```
+
+**方法 3：通过 session_id 精准定位**
+```bash
+# 先在协调器会话中查询
+用户："列出所有 completed 状态的代理及其 session_id"
+# 获取具体 ID 后
+用户："向 session_xxx 发送消息..."
+```
+
+#### Q4: Alt+N 等操作能对"上一轮"swarm 做操作吗？
+
+**答：能！因为根本不存在"上一轮"的概念。**
+
+Alt+N 显示的是**当前 swarm_id 下的所有成员**，包括：
+- 正在运行的（running/blocked）
+- 已完成但存活的（completed/idle）
+- 刚 spawn 的新 agent
+
+```
+┌─ Swarm Panel (Alt+N) ───────────────────────┐
+│ 🔴 hibiscus (running) - test_writer         │
+│ 🟢 blossom (completed) - api_reviewer ✓     │ ← 上一轮 agent，可直接唤醒
+│ 🔵 clover (coordinator)                     │
+│ 🟣 daisy (idle) - doc_updater               │ ← 可重新分配任务
+│                                              │
+│ 按 Alt+j/k 选择，Esc 退出                    │
+└──────────────────────────────────────────────┘
+```
+
+### 最佳实践总结
+
+| 需求 | 推荐做法 |
+|------|---------|
+| **保留 completed agent 以便重用** | 不调用 `cleanup`；`run_plan` 设 `retain_agents=true` |
+| **释放槽位给新任务** | 显式 `swarm cleanup` 只清理 completed/idle |
+| **跨批次管理 agent** | TUI: `Alt+N` 看到全部<br>语言："告诉我为啥 batch 的 agent 还在运行" |
+| **避免 slot exhaustion** | 定期清理长期 idle 的 agent；注意并发预算限制 |
+
+### 常见误区
+
+❌ **错误认知**："上一轮 swarm 已结束，新一代会覆盖旧的"
+✅ **实际情况**：所有 agent 共存于同一 swarm，除非显式 cleanup
+
+❌ **错误认知**："需要特殊的命令切换到历史轮次"
+✅ **实际情况**：`Alt+N` 显示的就是全部，用 `/resume` 才是切换 jcode 会话窗口
+
+❌ **错误认知**："agent 完成后会自动消失"
+✅ **实际情况**：completed agent 永久保留直到被 cleanup
+
+---
