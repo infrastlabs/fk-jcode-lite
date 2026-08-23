@@ -224,7 +224,57 @@ git push --force origin sam-custom
 
 ---
 
-## 六、数据附录
+## 七、清理结果
+
+### 执行状态 (2026-08-23)
+
+| 项目 | 清理前 | 清理后 |
+|---|---:|---:|
+| `.git` 对象库 | **356 MiB** | **38 MiB** (↓ 89%) |
+| 历史大 blob | 40 个 | **1 个** (`crates/jcode-math/assets/STIXTwoMath-Regular.ttf`, 已保留) |
+| 工作区 ≥1MiB 文件 | 15 个 | **0 个** (全部搬移) |
+| 搬移目标 | — | `../fk-jcode-dropBig/` (15 个文件, 169 MiB) |
+
+### 搬移文件清单 (`../fk-jcode-dropBig/`)
+
+| 大小 (MiB) | 路径 |
+|---:|---|
+| 54.45 | `assets/readme/100-sessions-spawn-demo.gif` |
+| 24.18 | `assets/demos/jcode-claudeai-demo.mp4` |
+| 18.35 | `assets/demos/exports/memory_demo_1m40_spedup.mp4` |
+| 16.01 | `assets/demos/exports/memory_demo_1m40_spedup_v2.mp4` |
+| 16.01 | `assets/demos/memory_demo.mp4` |
+| 11.21 | `assets/demos/jcode_wolf_demo_final.mp4` |
+| 10.54 | `assets/demos/jcode_wolf_demo_v2.mp4` |
+| 4.67 | `assets/demos/jcode_replay_duck_fast-on-mid-stream_autoedit_2x.mp4` |
+| 2.82 | `assets/demos/jcode_demo.mp4` |
+| 2.47 | `assets/demos/jcode_replay_duck_fast-on-mid-stream_autoedit_trimmed_2x.mp4` |
+| 2.47 | `assets/demos/workflow.mp4` |
+| 1.20 | `assets/demos/jcode_mermaid_demo_final.mp4` |
+| 1.20 | `assets/demos/jcode_mermaid_demo.mp4` |
+| 1.04 | `assets/demos/jcode_mermaid_demo_v2.mp4` |
+| 1.89 | `assets/app-icons/Jcode.icns` |
+
+### 清理流程记录
+
+| 步骤 | 操作 | 结果 |
+|---|---|---|
+| 1. 搬移 | `mv` 15 个工作区大文件 → `../fk-jcode-dropBig/` | `crates/STIXTwoMath-Regular.ttf` 保留不动 |
+| 2. git rm | `git rm` + `git commit` | 产生 `chore: remove large binary assets` commit |
+| 3. BFG | `bfg -b 1M` 删除历史中所有 ≥1MiB 的 blob | 15930 个 object id 被改写 |
+| 4. gc | `reflog expire --all` + `git gc --prune=now --aggressive` | 356 MiB → 38 MiB |
+| 5. 验证 | 扫描历史 + 工作区 | 仅剩 1 个 `crates/` 字体 |
+
+### 分支状态
+
+| 分支 | HEAD | `.git` 大小 | 说明 |
+|---|---|---:|---|
+| `sam-custom` | `291fbbe14` | ~356 MiB (未清理) | 主分支, 保留原始历史 |
+| `sam-lite` | `e3fcd469b` | **38 MiB** | 已清理, 单独推送至 `fk-jcode-lite` |
+
+---
+
+## 八、数据附录
 
 ```
 历史 blob ≥1MiB: 40 个, 总计 357,508,581 bytes (340.95 MiB)
