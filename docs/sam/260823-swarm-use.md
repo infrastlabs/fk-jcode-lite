@@ -1,79 +1,79 @@
-# Swarm 使用问题记录
-
-> 整理日期：2026-08-23
-> 记录 Swarm 使用过程中遇到的问题、分析与解决方法，持续补充。
-
----
-
-## 一、Swarm 面板 Alt+Up/Down 失效：变成了输入框历史翻滚
+# jcode Swarm 使用问题记录
 
 > 记录日期：2026-08-23
 
+本文档记录在 jcode 项目中使用 Swarm 功能时遇到的问题和排查过程。
+
+---
+
+## 一、Alt+↑/↓ 在 Swarm 面板中无法选择 Agent
+
 ### 问题描述
 
-Swarm 模式下，按下 swarm 面板焦点快捷键（默认 Alt+N），随后 Alt+Up/Down 方向键无法选择 agent，而是触发了输入框的历史翻滚。
+使用 Swarm 功能时，在主界面按下 Alt+↑ 或 Alt+↓ 无法切换到不同的 agent，反而被识别为滚动输入历史。但 Alt+N 能聚焦面板、Alt+O 能弹出到新终端，均正常工作。
 
 ### 代码调用链
 
-用户按下 **Alt+Up** 时，`handle_key_core` 中的处理顺序：
+按键输入从 `run` 函数开始（`crates/jcode-tui/src/tui/run.rs:340`），传递到 `handle_loop`，再到 `handle_tui_events`（`crates/jcode-tui/src/tui/app.rs:1873`）。最终到达 `handle_key_core`（第2892行），在 `handle_key_core` 之前，按键先经过 `handle_pre_control_shortcuts`（第2264行）。
 
-```
-handle_key_core(KeyCode::Up, ALT)
-  └→ handle_pre_control_shortcuts()          [input.rs:2979]
-       └→ swarm_panel_focused() &&            [input.rs:2352]
-            handle_swarm_panel_key(Up, ALT)
-            └→ !inline_swarm_gallery_active()?  [tui_state.rs:2077]
-                 ↓ 如果 gallery 不活跃 → 返回 false，继续往下走
-       └→ handle_alt_key() → 不处理 Up/Down   [input.rs:2398]
-       └→ handle_navigation_shortcuts() → 不匹配 [input.rs:2410]
-       └→ 返回 false
-  └→ code == KeyCode::Up &&                    [input.rs:2991]
-       is_prompt_recall_modifier(ALT)  ← 这里捕获了 Alt+Up！
-       → 触发输入框历史翻滚
-```
-
-### 根因：`inline_swarm_gallery_active()` 返回 false
-
-`handle_swarm_panel_key` 在 `tui_state.rs:2077` 检查：
+`handle_key_core` 在第2661行遇到 Alt+↑/↓ 时通过 `is_prompt_recall_modifier` 判断触发输入历史翻滚：
 
 ```rust
-if !self.swarm_panel_focused || !self.inline_swarm_gallery_active() {
-    return false;  // ← 返回 false，Alt+Up 未被 swarm 消费
+if is_prompt_recall_modifier(modifiers, code) {
+    app.toggle_prompt_recall(direction);
+    return;
 }
 ```
 
-`inline_swarm_gallery_active()` 在 `tui_state.rs:1686` 需要三个条件**全部**满足：
+### 根因
 
+Swarm 面板按键处理有严格的门控：
+
+第2352行：
 ```rust
-fn inline_swarm_gallery_active(&self) -> bool {
-    self.swarm_enabled                                    // ① swarm feature 开启
-        && matches!(config().agents.swarm_spawn_mode, Inline)  // ② spawn mode = Inline
-        && !self.inline_swarm_members().is_empty()         // ③ 有 swarm 成员
+if app.swarm_panel_focused() && app.handle_swarm_panel_key(code, modifiers) {
+    return true;
 }
 ```
+这里又有一层 `swarm_panel_focused()` 判断，加上 `inline_swarm_gallery_active()`（第2077行），双重门控。
 
-**关键问题在第③条**：`inline_swarm_members()` 通过 `filter_inline_swarm_subtree` 按 `report_back_to_session_id` 过滤，只返回**当前 session 直接 spawn 的子 agent**。如果当前 session 是其他 session spawn 出来的 worker（即你本人是某个 swarm agent 的子 session），或者刚刚 spawn 的 agents 已完成并从成员列表中移除，则 `inline_swarm_members()` 返回空列表。
+按用户实际体验：Alt+N 能聚焦面板、Alt+O 能用，但 Alt+↑/↓ 不生效。这说明 `swarm_panel_focused` 已经是 true，门控不是问题。
 
-### 连锁反应
+### 根因：终端对 Alt+Arrow 键的修饰符处理不一致
 
-1. 用户按 Alt+N（swarm focus 键）→ `cycle_swarm_panel_view()` 发现 gallery 不活跃 → **不设置焦点**，直接返回 Chat
-2. 用户以为进入了 swarm 模式，但实际上焦点没设上
-3. 按 Alt+Up → `handle_swarm_panel_key` 返回 false → 穿透到 `is_prompt_recall_modifier(ALT)` → 触发历史翻滚
+查看 `swarm_panel_action_for_key`（第2176-2178行）：
 
-### 结论
+```rust
+KeyCode::Down | KeyCode::Char('j') if alt => SelectNext,
+KeyCode::Up | KeyCode::Char('k') if alt => SelectPrev,
+KeyCode::Char('o') | KeyCode::Enter if alt => SelectPopOut,
+```
 
-**这不是一个 bug，而是一个设计约束**：swarm inline gallery 只在当前 session 有直接 spawn 的子 agent 时才激活。如果当前 session 本身是 worker（被其他 session spawn 出来的），或者没有活跃的子 agent，则 Alt+Up/Down 不会被 swarm 面板拦截，而是回退到输入历史。
+Alt+↑/↓ 要求 `KeyCode::Up/Down` **且** `modifiers` 包含 `ALT`。但许多终端（手机终端、Win10 的多数终端）对 Alt+Arrow 的处理方式是发送 `ESC [ A` / `ESC [ B` 序列，而不是 `Char('o')|ALT`。crossterm 收到后解析为 `KeyCode::Up/Down` 但 **modifiers 为空**（ALT 已消耗在 ESC 前缀中），导致 `if alt` 判断为 false，快捷键不匹配。
 
-要确认，可以检查你是否在一个被 spawn 出来的 worker session 中，或者 swarm agents 是否已在 `await_members` 完成后被清理。
+Alt+字母键（如 Alt+O）走的是字符编码路径，不受此影响，所以 Alt+O 能正常工作。
 
-### 相关代码位置
+## 二、workaround：使用 Alt+j / Alt+k 替代
 
-| 文件 | 函数 | 行号 |
-|------|------|------|
-| `crates/jcode-tui/src/tui/app/input.rs` | `handle_key_core` | 2892 |
-| `crates/jcode-tui/src/tui/app/input.rs` | `handle_pre_control_shortcuts` | 2264 |
-| `crates/jcode-tui/src/tui/app/input.rs` | `is_prompt_recall_modifier` | 1261 |
-| `crates/jcode-tui/src/tui/app/tui_state.rs` | `handle_swarm_panel_key` | 2072 |
-| `crates/jcode-tui/src/tui/app/tui_state.rs` | `inline_swarm_gallery_active` | 1686 |
-| `crates/jcode-tui/src/tui/app/tui_state.rs` | `cycle_swarm_panel_view` | 2015 |
-| `crates/jcode-tui/src/tui/app/tui_state.rs` | `swarm_panel_action_for_key` | 2158 |
+代码已经内置了字母替代键（第2176-2177行）：
+
+| 功能 | 原快捷键 | 替代快捷键 | 状态 |
+|------|---------|-----------|------|
+| 选下一个 agent | Alt+↓ | **Alt+j** | ✅ 可用 |
+| 选上一个 agent | Alt+↑ | **Alt+k** | ✅ 可用 |
+| 弹出到新终端 | Alt+O | — | ✅ 可用 |
+| 打开 swarm prompt | Alt+Shift+P | — | ✅ 可用 |
+
+Alt+j/Alt+k 在 TUI 中没有被占用（仅在 Desktop2 中用作工作区切换）。
+
+## 三、代码修复方向（待实现）
+
+在 `swarm_panel_action_for_key` 中增加 Alt+Arrow 的 F-key 降级归一化，或在 crossterm event 解析层统一处理 Alt+Arrow 的修饰符丢失问题。
+
+## 四、Swarm Agent 状态
+
+| 审查任务 | Agent | 状态 |
+|---------|-------|------|
+| lib.rs API 代码审查 | hibiscus | ✅ 完成，发现 8 个改进点 |
+| test_writer 测试补充 | blossom | ❌ 失败 |
+| doc updater 文档更新 | daisy | ❌ 失败 |
