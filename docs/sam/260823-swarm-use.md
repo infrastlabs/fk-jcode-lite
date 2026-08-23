@@ -113,7 +113,7 @@ Alt+j/Alt+k 在 TUI 中没有被占用（仅在 Desktop2 中用作工作区切�
 | 方法 | 用途 | 执行方式 |
 |------|------|----------|
 | `Alt+j/k` + 输入指令 | TUI 内切换到 agent 并发送新消息 | TUI 快捷键，最推荐 |
-| `jcode debug message --session <id>` | CLI 唤醒指定 session | 需要先运行 `jcode debug start` |
+| `jcode debug -S <id> message` | CLI 发送消息到指定 session | 需要先设置 `JCODE_DEBUG_CONTROL=1` |
 | `swarm assign_task` | coordinator 分配新任务给该 agent | 通过 coordinator 界面或 `swarm assign` 命令 |
 | `swarm retry` | 对失败的 agent 重新分配同一任务 | 通过 failure report 自动触发或手动 `swarm retry` |
 | `swarm reassign` | 把任务转给另一个 agent | 通过 agent 界面手动 reassign |
@@ -126,17 +126,22 @@ Alt+j/Alt+k 在 TUI 中没有被占用（仅在 Desktop2 中用作工作区切�
 2. 使用 `Alt+j` 或 `Alt+k` 导航到目标 agent
 3. 直接输入新指令即可
 
-**CLI 方式**：
+**CLI 方式（仅限调试场景）**：
 ```bash
-# 1. 启动 debug socket（如果未运行）
+# 前提条件：设置环境变量启用 debug socket
+export JCODE_DEBUG_CONTROL=1
+
+# 1. 启动 server（如果未运行）
 jcode debug start
 
 # 2. 查看 session 列表获取 agent ID
-jcode debug sessions
+jcode debug list
 
-# 3. 发送消息唤醒指定 agent
-jcode debug message --session <agent_session_id> message="新指令" delivery="wake"
+# 3. 发送消息到指定 session
+jcode debug -S <agent_session_id> message "新指令"
 ```
+
+注意：CLI 命令仅用于调试，生产环境请使用 TUI。
 
 注意：`jcode` 没有独立的 `swarm` shell 子命令。上述 `swarm list`、`swarm message` 等是**Agent 内部工具 API**，不在 CLI 层面暴露。
 
