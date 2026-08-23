@@ -93,6 +93,7 @@ Alt+j/Alt+k 在 TUI 中没有被占用（仅在 Desktop2 中用作工作区切�
 
 - **TUI**：按 `Alt+N` 进入 Swarm 面板，可以看到实时状态图（running/blocked/idle）
 - **Agent 内部工具**：使用 `swarm list` 内部 API 调用
+- **语言指令**：在 TUI 中说"列出所有代理"，模型自动调用 `swarm list`
 
 仅显示 running / idle 状态的 agent。
 
@@ -103,6 +104,7 @@ Alt+j/Alt+k 在 TUI 中没有被占用（仅在 Desktop2 中用作工作区切�
 | `session_search query=swarm` | 搜索所有 swarm 相关会话，包括已完成的 worker |
 | coordinator 会话对话历史 | 每个 worker 完成后自动转发 completion report 给 coordinator |
 | `Alt+N` 进入 Swarm 面板（TUI） | 实时状态图（running/blocked/idle），但不显示已清理的 completed |
+| "告诉我 xxx 的状态" | 语言指令触发 `swarm status` |
 
 ### 重入已结束的 Agent
 
@@ -110,14 +112,16 @@ Alt+j/Alt+k 在 TUI 中没有被占用（仅在 Desktop2 中用作工作区切�
 
 #### 可用方法对比
 
-| 方法 | 用途 | 执行方式 |
-|------|------|----------|
-| `Alt+j/k` + 输入指令 | TUI 内切换到 agent 并发送新消息 | TUI 快捷键，最推荐 |
-| `jcode debug -S <id> message` | CLI 发送消息到指定 session | 需要先设置 `JCODE_DEBUG_CONTROL=1` |
-| `swarm assign_task` | coordinator 分配新任务给该 agent | 通过 coordinator 界面或 `swarm assign` 命令 |
-| `swarm retry` | 对失败的 agent 重新分配同一任务 | 通过 failure report 自动触发或手动 `swarm retry` |
-| `swarm reassign` | 把任务转给另一个 agent | 通过 agent 界面手动 reassign |
-| `swarm spawn` | 重新 spawn 一个全新的（不重入旧的） | `swarm spawn` 或 `jcode self-dev` 重新启动 |
+| 方法 | 用途 | 执行方式 | 权限要求 |
+|------|------|----------|----------|
+| `Alt+j/k` + 输入指令 | TUI 内切换到 agent 并发送新消息 | TUI 快捷键，最推荐 | 无 |
+| `jcode debug -S <id> message` | CLI 发送消息到指定 session | 需要先设置 `JCODE_DEBUG_CONTROL=1` | admin |
+| "给 xxx 发消息继续工作" | 语言指令触发 `dm` / `message` | TUI 自然语言 | 任意成员 |
+| "唤醒 idle 的 xxx" | 语言指令触发 `wake` | TUI 自然语言 | 建议 coordinator |
+| "重新分配这个任务给另一个代理" | 语言指令触发 `reassign` | TUI 自然语言 | 需 coordinator |
+| `swarm assign_task` | coordinator 分配新任务给该 agent | 通过 coordinator 界面或 `swarm assign` 命令 | coordinator |
+| `swarm retry` | 对失败的 agent 重新分配同一任务 | 通过 failure report 自动触发或手动 `swarm retry` | coordinator |
+| `swarm spawn` | 重新 spawn 一个全新的（不重入旧的） | `swarm spawn` 或 `jcode self-dev` 重新启动 | 无 |
 
 #### 具体操作流程
 
