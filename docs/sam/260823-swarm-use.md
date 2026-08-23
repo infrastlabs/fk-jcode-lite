@@ -511,3 +511,61 @@ swarm { action: "spawn", label: "api reviewer", prompt: "审查 api.rs" }
 **总结**：只能通过 `label` 参数指定任务名，随机名字和图标都是自动生成的，无法自定义。
 
 ---
+
+## 七、`retain_agents=true` 无效原因分析（2026-08-24 01:22 追加）
+
+### 问题现象
+
+设置 `retain_agents=true` 后，任务执行完进入 idle，但约 10-30 分钟后 worker 仍然被释放。
+
+### 根本原因
+
+**`retain_agents` 只控制 `run_plan` 的行为**，不影响独立的 idle worker reaper 机制。
+
+### 两个独立机制
+
+| 机制 | 代码位置 | 作用 | 默认值 |
+|------|---------|------|--------|
+| **`run_plan` 的 retain_agents** | `communicate.rs:1251` | 计划结束时是否清理 worker | `false` |
+| **Idle worker reaper** | `swarm.rs:257-271` | 后台守护，定期清理空闲 worker | `30 * 60` 秒（30分钟） |
+
+### Idle Worker Reaper 代码
+
+`crates/jcode-app-core/src/server/swarm.rs:257-291`:
+
+```rust
+/// How long a finished spawned worker may sit idle before the server reaps it
+/// (closes its client and removes the member). `0` disables reaping.
+const DEFAULT_SWARM_IDLE_WORKER_REAP_SECS: u64 = 30 * 60;
+
+pub(super) fn swarm_idle_worker_reap_after() -> Option<Duration> {
+    let secs = std::env::var("JCODE_SWARM_IDLE_WORKER_REAP_SECS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_SWARM_IDLE_WORKER_REAP_SECS);
+    (secs > 0).then(|| Duration::from_secs(secs))
+}
+```
+
+### Reaper 的回收条件
+
+`idle_spawned_worker_reap_candidates` 仅回收满足以下条件的 worker：
+
+1. `report_back_to_session_id.is_some()` — 是被 spawn 出来的工作者
+2. `role != "coordinator"` — 不是协调器
+3. `status == "ready" || terminal_status` — 已完成工作
+4. `last_status_change.elapsed() >= idle_after` — 空闲超过阈值
+
+### 解决方案
+
+```bash
+# 禁用 idle worker reaper（设为 0）
+export JCODE_SWARM_IDLE_WORKER_REAP_SECS=0
+
+# 或设置更长的超时时间（如 2 小时）
+export JCODE_SWARM_IDLE_WORKER_REAP_SECS=7200
+```
+
+**注意**：`retain_agents=true` 和 `JCODE_SWARM_IDLE_WORKER_REAP_SECS=0` 是**两个独立开关**，需要同时设置才能完全保留 worker。
+
+---
