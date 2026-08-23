@@ -383,3 +383,49 @@ Alt+N 显示的是**当前 swarm_id 下的所有成员**，包括：
 | **默认场景** | `retain_agents=false` (节省资源) |
 
 ---
+
+---
+
+## 五、TUI 状态提示说明（2026-08-23 16:23 追加）
+
+### "Swarm view closed" 什么时候出现？
+
+**场景**：从 FullPage 模式按 Alt+N 退出时
+
+#### 完整状态流转与对应提示
+
+| 当前状态 | 按 Alt+N 后 | 底部状态栏提示 |
+|---------|------------|---------------|
+| Chat（普通聊天） | → Controls | "Use Alt+↑/↓ to select, Alt+O to open, Esc to exit" |
+| Controls（紧凑条带） | → FullPage | "Swarm panel (full page): Use ↑/↓ to navigate, Enter to focus, Esc to close" |
+| **FullPage（全屏页面）** | → **Chat** | **"Swarm view closed"** ← 你看到的就是这个 |
+
+#### 代码位置验证
+
+`crates/jcode-tui/src/tui/app/input.rs:2337-2345`:
+
+```rust
+match app.cycle_swarm_panel_view() {
+    SwarmPanelView::Chat => {
+        app.set_status_notice("Swarm view closed");
+    }
+    SwarmPanelView::Controls => {
+        app.set_status_notice(crate::tui::keybind::swarm_view_hint("full page"));
+    }
+    SwarmPanelView::FullPage => {
+        app.set_status_notice(crate::tui::keybind::swarm_page_hint());
+    }
+}
+```
+
+#### 实用技巧
+
+如果你想停留在某个视图而不继续循环：
+
+| 想要停留的状态 | 操作 |
+|--------------|------|
+| 只打开紧凑条带看状态 | 按一次 Alt+N → 用 Esc 退出 |
+| 查看全屏详情 | 按一次 Alt+N → 再按一次 Alt+N → 用 Esc 或第三次 Alt+N 退出 |
+| 直接关闭 swarm 面板 | 在任何面板模式下按 Esc |
+
+---
