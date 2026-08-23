@@ -180,7 +180,7 @@ git pull --rebase origin sam-custom
 | **前置检查** | 检测 BFG / Java / 工作区状态 | 不干净则自动 stash |
 | **Step 1 — 搬移** | 工作区 ≥1MiB 文件 → `../fk-jcode-dropBig/` (保留目录结构) | `crates/` 下字体等保留不动 |
 | **Step 2 — git rm** | 从索引移除已搬移文件并提交 | 产生 `chore: remove large binary assets` commit |
-| **Step 3 — BFG** | 扫描全部历史，`ios/.build*` 用 `--delete-directories`，其余逐个 `--delete-files`，跳过 `crates/` | 从所有分支历史中剥离大文件 |
+| **Step 3 — BFG** | `bfg -b 1M` 删除全部历史中 ≥1MiB 的 blob，然后 `git add` 回 `crates/` 下保留的字体 | 从所有分支历史中剥离大文件，保留 `crates/` 资源 |
 | **Step 4 — gc** | `reflog expire --all` + `git gc --prune=now --aggressive` | 压缩对象库，显示前后大小对比 |
 | **Step 5 — 验证** | 扫描确认无残留 | 列出保留的 `crates/` 文件 |
 

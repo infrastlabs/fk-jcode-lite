@@ -242,24 +242,43 @@ bfg_clean() {
     fi
   done <<< "$targets"
 
-  # 组装命令
-  for d in ${dir_targets[@]+"${dir_targets[@]}"}; do
-    bfg_args+=("--delete-directories" "$d")
-  done
-  for f in ${file_targets[@]+"${file_targets[@]}"}; do
-    bfg_args+=("--delete-files" "$f")
-  done
+  # ─── 构建 BFG 参数 ───────────────────────────────────────────────
+  #
+  # BFG 参数说明:
+  #   -D <glob>  /  --delete-files <glob>  : 按文件名匹配 (glob, 可重复)
+  #   --delete-folders <glob>              : 按文件夹名匹配 (glob, 可重复)
+  #
+  # 注意: --delete-files 只匹配文件名, 不匹配完整路径
+  #       --delete-directories 不是 BFG 支持的参数
+  #
+  # 策略:
+  #   1. 用 -b 1M 直接删除所有 ≥1MiB 的 blob (最简单)
+  #      然后从工作区重新添加 crates/ 下的保留文件
+  #   2. 或者用 -D <glob> + --delete-folders 精确控制
+  #
+  # 本脚本采用策略 1 (最彻底), 因为:
+  #   - 已搬移工作区文件, crates/ 下的字体仍在工作区
+  #   - 只需确保清理后重新 git add crates/ 保留文件即可
 
+  info "  策略:  -b 1M (删除所有 ≥1MiB 的 blob)"
   info "  执行 BFG..."
-  info "    ${BFG_BIN} ${bfg_args[*]} \"$REPO_ROOT\""
-  echo ""
 
-  # BFG 可能输出大量日志，只取关键行
-  "$BFG_BIN" "${bfg_args[@]}" "$REPO_ROOT" 2>&1 | \
-    grep -E '(^\s*[0-9]|Found|Cleaning|Done)' || true
+  java -jar /usr/local/bin/bfg.jar -b 1M "$REPO_ROOT" 2>&1 | \
+    grep -E '(^\s*\||Deleted files|In total|BFG run)' || true
 
   echo ""
   ok "Step 3 完成: BFG 清理结束"
+
+  # 重新添加 crates/ 下保留的大文件
+  info "  重新添加 crates/ 下保留的大文件..."
+  while IFS= read -r -d '' f; do
+    local rel="${f#./}"
+    if git add "$rel" 2>/dev/null; then
+      info "  [add] $rel"
+    fi
+  done < <(find ./crates -type f -size +${BIG_BYTES}c -print0 2>/dev/null | sort -z)
+
+  git commit --amend --no-edit 2>/dev/null || true
 }
 
 # ─── Step 4: 压缩对象库 ────────────────────────────────────────────────
