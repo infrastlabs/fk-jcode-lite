@@ -6,9 +6,9 @@
 
 ---
 
-## 一、Alt+↑/↓ 在 Swarm 面板中无法选择 Agent
+## 一、Swarm 使用问题综述
 
-### 问题描述
+### Alt+↑/↓ 在 Swarm 面板中无法选择 Agent
 
 使用 Swarm 功能时，按下 Alt+↑ 或 Alt+↓ 无法切换到不同的 agent，反而被识别为滚动输入历史。但 Alt+N 能聚焦面板、Alt+O 能弹出到新终端，均正常工作。
 
@@ -66,7 +66,7 @@ Alt+↑/↓ 要求 `KeyCode::Up/Down` **且** `modifiers` 包含 `ALT`。但许�
 
 Alt+字母键（如 Alt+O）走的是字符编码路径，不受此影响，所以 Alt+O 能正常工作。
 
-## 二、workaround：使用 Alt+j / Alt+k 替代
+### workaround：使用 Alt+j / Alt+k 替代
 
 代码已经内置了字母替代键（第2176-2177行）：
 
@@ -79,14 +79,49 @@ Alt+字母键（如 Alt+O）走的是字符编码路径，不受此影响，所�
 
 Alt+j/Alt+k 在 TUI 中没有被占用（仅在 Desktop2 中用作工作区切换）。
 
-## 三、代码修复方向（待实现）
+### 代码修复方向（待实现）
 
 在 `swarm_panel_action_for_key` 中增加 Alt+Arrow 的 F-key 降级归一化，或在 crossterm event 解析层统一处理 Alt+Arrow 的修饰符丢失问题。
 
-## 四、Swarm Agent 状态
+---
 
-| 审查任务 | Agent | 状态 |
-|---------|-------|------|
-| lib.rs API 代码审查 | hibiscus | ✅ 完成，发现 8 个改进点 |
-| test_writer 测试补充 | blossom | ❌ 失败 |
-| doc updater 文档更新 | daisy | ❌ 失败 |
+## 二、查看执行过的 Swarm 列表与重入已结束的 Agent
+
+### 查看历史记录
+
+**当前活跃 agent**：
+```
+swarm list
+```
+仅显示 running / idle 状态的 agent。
+
+**已结束 agent 的历史**：
+
+| 方式 | 用途 |
+|------|------|
+| `session_search query=swarm` | 搜索所有 swarm 相关会话，包括已完成的 worker |
+| coordinator 会话对话历史 | 每个 worker 完成后自动转发 completion report 给 coordinator |
+| `Alt+N` 进入 Swarm 面板（TUI） | 实时状态图（running/blocked/idle），但不显示已清理的 completed |
+
+### 重入已结束的 Agent
+
+根据 `docs/SWARM_ARCHITECTURE.md` Communication 章节：**Completed 或 idle 的 agent 不会自动 resume**，必须显式操作。
+
+| 方法 | 用途 |
+|------|------|
+| `swarm message` + `delivery: "wake"` | DM 唤醒一个已存在的 agent |
+| `swarm wake` | 唤醒指定 session |
+| `swarm assign_task` | coordinator 分配新任务给该 agent |
+| `swarm retry` | 对失败的 agent 重新分配同一任务 |
+| `swarm reassign` | 把任务转给另一个 agent |
+| `swarm spawn` | 重新 spawn 一个全新的（不重入旧的） |
+
+最简单的方式：
+
+```
+swarm message to_session=<已结束的session_id或label> message="新指令" delivery="wake"
+```
+
+注意：如果 agent 已被 `cleanup` 清理（停止），则无法重入，只能 `spawn` 重新创建。
+
+---
