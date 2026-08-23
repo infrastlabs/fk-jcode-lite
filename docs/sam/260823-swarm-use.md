@@ -429,3 +429,51 @@ match app.cycle_swarm_panel_view() {
 | 直接关闭 swarm 面板 | 在任何面板模式下按 Esc |
 
 ---
+
+#### 异常边界情况：无 Swarm Agent 时按 Alt+N
+
+**问题现象**：当前没有任何 swarm agent 时，按 Alt+N 会立即显示 "Swarm view closed"。
+
+**根本原因**：
+
+查看代码 `crates/jcode-tui/src/tui/app/tui_state.rs:2015-2020`:
+
+```rust
+pub(crate) fn cycle_swarm_panel_view(&mut self) -> SwarmPanelView {
+    // 🔴 关键检查：如果 inline gallery 不活跃（无可用成员）
+    if !self.inline_swarm_gallery_active() {
+        self.swarm_panel_focused = false;
+        self.swarm_panel_full_page = false;
+        return SwarmPanelView::Chat;  // ← 直接返回 Chat，从未真正打开面板
+    }
+    // ... 正常状态循环逻辑
+}
+```
+
+`inline_swarm_gallery_active()` 检查当前是否有可用的 swarm members。如果没有：
+- 函数**短路返回** Chat
+- input.rs 匹配到 Chat 分支显示 "Swarm view closed"
+- **实际上面板根本没机会打开**
+
+**体验问题**：
+| 用户预期 | 实际表现 |
+|---------|---------|
+| "我想看看有没有 agent" | "Swarm view closed"（好像刚才开过了？） |
+| 应该提示"暂无 agent"或什么都不说 | 误导性的"已关闭"提示 |
+
+**临时 workaround**：
+```text
+方法 1：先用语言查询
+用户："告诉我 swarm 里有哪些代理"
+→ 如果有，模型返回列表；如果没有，明确告知"当前没有活跃的 swarm 代理"
+
+方法 2：先 spawn 再查看
+用户："生成一个测试代理"
+Alt+N  → 现在可以看到面板了
+```
+
+**建议改进方向**（非实现）：
+- 当 `!inline_swarm_gallery_active()` 时，应设置空提示或不设置提示，而非 "Swarm view closed"
+- 或者显示更有意义的提示如 "No active swarm agents to display"
+
+---
