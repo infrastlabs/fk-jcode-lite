@@ -569,3 +569,43 @@ export JCODE_SWARM_IDLE_WORKER_REAP_SECS=7200
 **注意**：`retain_agents=true` 和 `JCODE_SWARM_IDLE_WORKER_REAP_SECS=0` 是**两个独立开关**，需要同时设置才能完全保留 worker。
 
 ---
+
+## 八、Info Widget 配置说明（2026-08-24 01:38 追加）
+
+### 开关控制
+
+| 方式 | 配置 | 键位 |
+|------|------|------|
+| **快捷键** | `info_widget_toggle = "alt+i"`（默认） | 按 `Alt+I` 切换显示/隐藏 |
+| **代码调用** | `info_widget::toggle_enabled()` | 运行时切换 |
+
+### 内置固定位置分配（不可配置）
+
+每个 widget 的 side 是硬编码的，`~/.jcode/config.toml` 中**没有**位置/侧边选项：
+
+```rust
+// crates/jcode-tui/src/tui/info_widget.rs:126-143
+WidgetKind::Diagrams      => Side::Right,
+WidgetKind::WorkspaceMap  => Side::Right,
+WidgetKind::Overview      => Side::Right,
+WidgetKind::Todos         => Side::Right,
+WidgetKind::ContextUsage  => Side::Right,
+WidgetKind::MemoryActivity=> Side::Right,
+WidgetKind::SwarmStatus   => Side::Left,    // ← 左侧
+WidgetKind::BackgroundTasks=> Side::Left,   // ← 左侧
+WidgetKind::UsageLimits   => Side::Left,
+WidgetKind::KvCache       => Side::Left,
+WidgetKind::ModelInfo     => Side::Left,
+WidgetKind::GitStatus     => Side::Left,
+```
+
+### 结论
+
+| 功能 | 是否可配置 |
+|------|-----------|
+| 显示/隐藏 widget | ✅ `Alt+I` 快捷键切换，或 `[keybindings] info_widget_toggle = "alt+i"` |
+| 控制 widget 位置（左右） | ❌ 硬编码，`DisplayConfig` 中无此选项 |
+| 控制 widget 显示内容 | ❌ 自动按优先级排列，无配置项 |
+| 控制 widget 数量 | ❌ 自动决定，无配置项 |
+
+---
