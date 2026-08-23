@@ -135,15 +135,32 @@
 
 ### 前置准备
 
-```bash
-# 1. 安装 BFG Repo-Cleaner
-#    macOS:  brew install bfg
-#    Ubuntu: apt install bfg
-#    通用:   下载 https://rtyley.github.io/bfg-repo-cleaner/ 后
-#            java -jar bfg-*.jar  或  ln -s bfg-*.jar /usr/local/bin/bfg
+以下命令已在当前服务器 (Ubuntu 22.04 / ARM64) 验证通过，**root 可免密 sudo**：
 
-# 2. 确保 Java 11+ 可用
+```bash
+# 1. 安装 OpenJDK 11
+sudo apt-get update
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-11-jdk-headless
+
+# 验证:
 java -version
+# openjdk version "11.0.31"
+
+# 2. 安装 BFG Repo-Cleaner (官方 jar, 不走 apt 源)
+sudo wget -q \
+  https://repo1.maven.org/maven2/com/madgag/bfg/1.14.0/bfg-1.14.0.jar \
+  -O /usr/local/bin/bfg.jar
+
+# 创建 wrapper 脚本 (bfg.jar 不能直接执行, 需要 java -jar)
+sudo tee /usr/local/bin/bfg > /dev/null << 'EOF'
+#!/bin/bash
+exec java -jar /usr/local/bin/bfg.jar "$@"
+EOF
+sudo chmod +x /usr/local/bin/bfg
+
+# 验证:
+bfg --version
+# bfg 1.14.0
 
 # 3. 同步最新代码
 cd /path/to/fk-jcode
