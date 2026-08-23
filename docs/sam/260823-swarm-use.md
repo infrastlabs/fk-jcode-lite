@@ -604,6 +604,7 @@ WidgetKind::GitStatus     => Side::Left,
 | 功能 | 是否可配置 |
 |------|-----------|
 | 显示/隐藏 widget | ✅ `Alt+I` 快捷键切换，或 `[keybindings] info_widget_toggle = "alt+i"` |
+| 预设初始状态（启动时默认关闭） | ❌ 硬编码 `enabled: true`，无 `info_widget_enabled = false` 配置项 |
 | 控制 widget 位置（左右） | ❌ 硬编码，`DisplayConfig` 中无此选项 |
 | 控制 widget 显示内容 | ❌ 自动按优先级排列，无配置项 |
 | 控制 widget 数量 | ❌ 自动决定，无配置项 |
