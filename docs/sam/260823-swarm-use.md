@@ -39,6 +39,19 @@ if app.swarm_panel_focused() && app.handle_swarm_panel_key(code, modifiers) {
 
 按用户实际体验：Alt+N 能聚焦面板、Alt+O 能用，但 Alt+↑/↓ 不生效。这说明 `swarm_panel_focused` 已经是 true，门控不是问题。
 
+### Alt+N 多按次的状态机
+
+按用户实际观察：按一次 Alt+N 和连按两次的效果不同，两次会弹出更明显的窗口。这与 `cycle_swarm_panel_view`（第2015行）的状态机吻合：
+
+```
+当前状态                →  按 Alt+N 后状态
+swarm_panel_focused=false → Controls（紧凑条带，显示在 status bar 上方）
+swarm_panel_focused=true, full_page=false → FullPage（全屏页面）
+swarm_panel_focused=true, full_page=true → Chat（退出面板）
+```
+
+两种模式（Controls 和 FullPage）都设置了 `swarm_panel_focused = true`。Alt+↑/↓ 在两种模式下都不可用（终端编码问题），Alt+j/Alt+k 在两种模式下都可用。
+
 ### 根因：终端对 Alt+Arrow 键的修饰符处理不一致
 
 查看 `swarm_panel_action_for_key`（第2176-2178行）：
