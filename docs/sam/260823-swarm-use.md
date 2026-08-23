@@ -148,3 +148,50 @@ jcode debug -S <agent_session_id> message "新指令"
 **重要提示**：如果 agent 已被 `cleanup` 清理（停止），则无法重入，只能 `spawn` 重新创建。
 
 ---
+## 三、Swarm 工具 Action 触发方式（2026-08-23 15:53:40 追加）
+
+### 核心机制：自然语言指令 → 模型自动调用 swarm 工具
+
+根据 `260822-swarm.md` 第五节，swarm 工具提供 35+ 个 action（spawn、dm、broadcast、assign_task、await_members 等）。用户在 **TUI 外部** 如何触发这些 action？
+
+#### 答案：直接告诉模型"想做什么"，模型自动选择对应 action
+
+| 用户说 | 模型内部调用 |
+|---------|-------------|
+| "生成一个代理审查 api.rs" | `swarm { action: "spawn", label: "...", prompt: "..." }` |
+| "给 api reviewer 发消息补充边界情况" | `swarm { action: "dm", to_session: "...", message: "..." }` |
+| "等所有代理完成后汇总结果" | `swarm { action: "await_members", mode: "all" }` |
+| "清理已完成的代理" | `swarm { action: "cleanup" }` |
+
+#### 关键要点
+
+1. **用户无需记住具体 action 名**：只描述意图，模型自己决定调用哪个 action
+2. **没有 CLI 命令暴露这些 action**：必须通过对话触发
+3. **TUI 有快捷入口但有限**：`Alt+N` 面板 + `Alt+j/k` 导航是最高效的直接操作
+4. **设置 `/effort swarm` 后模型更主动**：会自主 decompose 任务并 spawn 多个代理
+
+#### 两种触发模式
+
+| 模式 | 触发方式 | 适用场景 |
+|------|---------|----------|
+| **显式手动** | 直接指示："spawn 3 个代理分别做 X/Y/Z" | 明确知道要并行做什么 |
+| **隐式自动** | `/effort swarm` + "重构模块 A" | 让模型自主分解并行 |
+
+**示例对比**：
+
+```text
+# 显式：用户指定结构
+"并行生成 3 个代理：
+ 1) api reviewer 审查接口
+ 2) test writer 写单元测试
+ 3) doc updater 更新文档
+ 等全部完成"
+↓ 模型依次调用 spawn×3 + await_members
+
+# 隐式：模型自主决策  
+/effort swarm
+"重构 src/parser.rs，拆成三个独立模块"
+↓ 模型判断需要 3 个 agent，自行 spawn 并分配任务
+```
+
+注意：无论哪种模式，最终都是模型调用 swarm 工具的某个 action。区别在于前者由用户指定结构，后者由模型基于系统提示自主决策。
