@@ -477,3 +477,37 @@ Alt+N  → 现在可以看到面板了
 - 或者显示更有意义的提示如 "No active swarm agents to display"
 
 ---
+
+## 六、Swarm Worker 图标与名字自定义（2026-08-24 01:19 追加）
+
+### 能自定义的
+
+**`label`（任务标签）**：`spawn` 时传 `label` 参数，显示在 agent 的 chip 上：
+
+```text
+# 用户说：
+"生成一个代理，label='api reviewer'，审查 api.rs"
+
+# 模型内部调用：
+swarm { action: "spawn", label: "api reviewer", prompt: "审查 api.rs" }
+```
+
+### 不能自定义的
+
+| 项目 | 原因 |
+|------|------|
+| **随机名字**（hibiscus / blossom） | session ID 由 `new_memorable_session_id_avoiding()` 生成，硬编码随机 |
+| **图标/emoji** | 状态图标固定映射（`▶`=running, `✓`=completed, `✗`=failed 等），不可配置 |
+| **friendly_name** | 没有 exposed 给用户设置，仅供内部使用 |
+
+### 实际显示效果
+
+| 你看到的 | 来源 |
+|---------|------|
+| `hibiscus` | session ID 随机名 |
+| `api reviewer` | `label` 参数 |
+| `▶` / `✓` 等状态图标 | 根据 status 自动映射 |
+
+**总结**：只能通过 `label` 参数指定任务名，随机名字和图标都是自动生成的，无法自定义。
+
+---
