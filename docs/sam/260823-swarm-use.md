@@ -343,3 +343,43 @@ Alt+N 显示的是**当前 swarm_id 下的所有成员**，包括：
 ✅ **实际情况**：completed agent 永久保留直到被 cleanup
 
 ---
+
+### `retain_agents=true` 正确设置方法（补充）
+
+**不是配置文件设置！** `retain_agents` 是 `run_plan` 工具的运行时参数，默认值为 `false`。
+
+#### 通过自然语言传递
+
+```text
+# ❌ 错误：只说"运行计划"，默认清理工作者
+用户："帮我运行这个 swarm 计划"
+→ 模型调用 swarm { action: "run_plan" } (没有 retain_agents，默认 false)
+
+# ✅ 正确：明确要求保留工作者
+用户："运行计划并保留完成后工作者，我不需要它们被自动清理"
+→ 模型调用 swarm { action: "run_plan", retain_agents: true }
+
+# 或直接指定参数
+用户："执行 run_plan，设置 retain_agents=true"
+→ 模型识别参数名并传递
+```
+
+#### 为什么默认是 `false`？
+
+根据代码注释 (`crates/jcode-app-core/src/tool/communicate.rs:1249`)：
+- Task-DAG 模型假设每个节点由独立的工作者处理
+- 重用已完成其他节点的 worker 会把之前的对话上下文带入新任务
+- 模型往往只是重复报告之前结果而不是做新工作
+- 因此 `run_plan` 默认每节点 spawn 新 worker，完成即停止以释放 slot
+
+#### 什么时候设 `true`？
+
+| 场景 | 推荐 |
+|------|-----|
+| 想让 completed workers 可重入追加任务 | `retain_agents=true` |
+| 需要频繁查询历史 agent 状态 | `retain_agents=true` |
+| 机器资源充足，slot 预算充足 | `retain_agents=true` |
+| 长期运行多轮次、避免重复 spawn | `retain_agents=true` |
+| **默认场景** | `retain_agents=false` (节省资源) |
+
+---
