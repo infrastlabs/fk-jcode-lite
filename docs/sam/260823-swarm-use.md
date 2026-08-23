@@ -477,3 +477,102 @@ Alt+N  → 现在可以看到面板了
 - 或者显示更有意义的提示如 "No active swarm agents to display"
 
 ---
+
+### UX Bug 深度分析：为什么 "Swarm view closed" 误导？（2026-08-23 16:38 追加）
+
+#### 两条执行路径都指向同一提示词
+
+**路径 A：正常退出**
+```rust
+// 用户在 FullPage 按 Alt+N
+cycle_swarm_panel_view() 
+  → match 命中 (true, true) 
+  → 返回 SwarmPanelView::Chat
+  → set_status_notice("Swarm view closed") ✅ 合理
+```
+
+**路径 B：空 gallery 短路**
+```rust
+// 无 agent 时按 Alt+N
+cycle_swarm_panel_view() 
+  → if !inline_swarm_gallery_active() 为真
+  → 直接 return SwarmPanelView::Chat 🔴 从未进入面板
+  → set_status_notice("Swarm view closed") ❌ 误导！
+```
+
+#### 用户认知 vs 系统行为
+
+| 用户预期 | 实际发生了什么 | 提示造成的误解 |
+|---------|--------------|---------------|
+| "我点开了 swarm 面板看看有没有东西" | 函数根本没让你进入 Controls/FullPage | "view closed"暗示你刚才确实看到了什么然后关了 |
+| "应该会显示空列表或者什么都不说" | 被当作 Chat 模式处理了 | 误导你以为是误触关闭了什么 |
+
+#### 根本问题：状态语义混淆
+
+当前设计将两种完全不同语义的情况合并到了同一个枚举值：
+
+```rust
+pub(crate) enum SwarmPanelView {
+    Chat,   // ← 含义 1：刚从 panel 退出回到聊天
+            // ← 含义 2：根本就没打开过 panel（因为无 members）
+    Controls,
+    FullPage,
+}
+```
+
+**后果**：`SwarmPanelView::Chat` 的提示文案无法区分"已关闭"和"本就无法打开"。
+
+#### 改进方案对比
+
+**方案 A：枚举拆分（最清晰）**
+```rust
+enum SwarmPanelView {
+    Chat,           // 普通聊天模式
+    ChatFromPanel,  // 从 panel 退出回来
+    NoAgents,       // 尝试打开但无 members
+    Controls,
+    FullPage,
+}
+
+match next {
+    SwarmPanelView::Chat => {}                          // 不提示
+    SwarmPanelView::ChatFromPanel => "Swarm view closed",
+    SwarmPanelView::NoAgents => "No active swarm agents to display",
+    // ...
+}
+```
+
+**方案 B：函数内提前返回不设置状态（简单）**
+```rust
+pub(crate) fn cycle_swarm_panel_view(&mut self) -> Option<SwarmPanelView> {
+    if !self.inline_swarm_gallery_active() {
+        return None;  // ← 短路但不触发提示逻辑
+    }
+    // ... 正常返回 Some(...)
+}
+
+// input.rs 调用处
+if let Some(view) = app.cycle_swarm_panel_view() {
+    match view {
+        SwarmPanelView::Chat => app.set_status_notice("Swarm view closed"),
+        // ...
+    }
+} else {
+    // 无 members 时静默或显示空状态
+}
+```
+
+**方案 C：新增布尔标志追踪上下文（折中）**
+```rust
+// tui_state.rs
+let was_in_chat_first_place = !self.swarm_panel_focused && !self.swarm_panel_full_page;
+if !self.inline_swarm_gallery_active() {
+    self.swarm_panel_focused = false;
+    self.swarm_panel_full_page = false;
+    return (SwarmPanelView::Chat, was_in_chat_first_place);  // ← 带上下文
+}
+```
+
+**推荐采用方案 B**：修改最小，修复最直接——既然都没打开过就不应该提示"closed"。
+
+---
