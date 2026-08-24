@@ -111,7 +111,22 @@ jobs:
         uses: mozilla-actions/sccache-action@v0.0.7
         continue-on-error: true
         id: sccache
-
+      
+      # https://chat.deepseek.com/a/chat/s/973434ab-d0e4-4e6a-81bc-e57af8452f7a
+      # Solution 4: Fix Permissions Before Caching
+      - name: Fix permissions
+        run: |
+          chmod -R u+w target/ 2>/dev/null || true
+          chmod -R 755 target/ 2>/dev/null || true
+          exit 0
+      # Solution 6: Complete Working Example
+      - name: Clean up for cache
+        run: |
+          # Remove problematic lock files before caching
+          find target -name "*.lock" -type f -delete 2>/dev/null || true
+          # Make sure all files are readable
+          chmod -R u+rw target/ 2>/dev/null || true
+          exit 0
       #nux.ERR; win.OK ##Post run this: ERR Permission denied; ref fk-maki/fk-msb:same usage
       # /usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/fk-jcode-lite/fk-jcode-lite --files-from manifest.txt --use-compress-program zstdmt
       # /usr/bin/tar: target/linux-compat/release/incremental/build_script_build-0pegicw4rqmok/s-hlmqfk8dh8-0cxxiqn.lock: Cannot open: Permission denied
@@ -121,8 +136,10 @@ jobs:
           cache-all-crates: "true"
           # 
           # https://chat.deepseek.com/a/chat/s/973434ab-d0e4-4e6a-81bc-e57af8452f7a
+          # Solution 3: Use Cache Action with Custom Paths
           # Specify which targets to cache #The action automatically handles permissions for most files
           cache-targets: "true"
+          # Solution 1: Exclude Incremental Files (Recommended)
           # Exclude incremental files which can cause permission issues
           cache-on-failure: "true"
           
@@ -336,8 +353,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           # dist/${{ matrix.artifact }}.exe
-          tag="${{ needs.create-release.outputs.tag }}"
-          gh release upload "${tag}" dist/${{ matrix.artifact }}.exe --clobber
+          # tag="${{ needs.create-release.outputs.tag }}" ##ERR@win
+          gh release upload "${{ needs.create-release.outputs.tag }}" dist/${{ matrix.artifact }}.exe --clobber
           # gh release upload "${env:GITHUB_REF_NAME}" dist/jcode-windows-x86_64.exe dist/jcode-windows-x86_64.tar.gz dist/jcode-windows-aarch64.exe dist/jcode-windows-aarch64.tar.gz --clobber
 
   # publish-windows:
