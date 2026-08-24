@@ -25,7 +25,11 @@ jobs:
         with:
           fetch-depth: 0
       - name: Generate release notes
-        run: scripts/generate_release_notes.sh "${GITHUB_REF_NAME}" > release_notes.md
+        run: |
+          # body is too long (maximum is 125000 characters)
+          # release not found
+          scripts/generate_release_notes.sh "${GITHUB_REF_NAME}" |head -5 > release_notes.md
+          # scripts/generate_release_notes.sh "${GITHUB_REF_NAME}" > release_notes.md
       - name: Create draft release if missing
         shell: bash
         env:
