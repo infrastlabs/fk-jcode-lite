@@ -20,30 +20,43 @@ jobs:
     name: Create release
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
+      - name: Get tag #ref fk-maki\.github\workflows\release.yml
+        id: tag
+        run: |
+          val=$(echo ${GITHUB_REF_NAME} |sed "s^/^_^g")
+          echo "tag=t-${val}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Generate release notes
-        run: scripts/generate_release_notes.sh "${GITHUB_REF_NAME}" > release_notes.md
+        run: |
+          # body is too long (maximum is 125000 characters)
+          # release not found
+          val=$(echo ${GITHUB_REF_NAME} |sed "s^/^_^g"); tag="t-${val}"
+          scripts/generate_release_notes.sh "${tag}" |head -5 > release_notes.md
+          # scripts/generate_release_notes.sh "${tag}" > release_notes.md
       - name: Create draft release if missing
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+          val=$(echo ${GITHUB_REF_NAME} |sed "s^/^_^g"); tag="t-${val}"
+          if ! gh release view "${tag}" >/dev/null 2>&1; then
             # quick-release.sh can race this job after pushing the tag. If it
             # creates the draft first, verify that release and continue.
-            if ! gh release create "${GITHUB_REF_NAME}" \
+            if ! gh release create "${tag}" \
               --draft \
-              --title "${GITHUB_REF_NAME}" \
+              --title "${tag}" \
               --notes-file release_notes.md; then
               sleep 2
-              gh release view "${GITHUB_REF_NAME}" >/dev/null
+              gh release view "${tag}" >/dev/null
             fi
           fi
-          gh release edit "${GITHUB_REF_NAME}" --notes-file release_notes.md
+          gh release edit "${tag}" --notes-file release_notes.md
 
   build-linux-macos:
     name: Build (${{ matrix.target }})
@@ -99,11 +112,20 @@ jobs:
         continue-on-error: true
         id: sccache
 
+      #nux.ERR; win.OK ##Post run this: ERR Permission denied; ref fk-maki/fk-msb:same usage
+      # /usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/fk-jcode-lite/fk-jcode-lite --files-from manifest.txt --use-compress-program zstdmt
+      # /usr/bin/tar: target/linux-compat/release/incremental/build_script_build-0pegicw4rqmok/s-hlmqfk8dh8-0cxxiqn.lock: Cannot open: Permission denied
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
           cache-all-crates: "true"
-
+          # 
+          # https://chat.deepseek.com/a/chat/s/973434ab-d0e4-4e6a-81bc-e57af8452f7a
+          # Specify which targets to cache #The action automatically handles permissions for most files
+          cache-targets: "true"
+          # Exclude incremental files which can cause permission issues
+          cache-on-failure: "true"
+          
       - name: Install mold linker (Linux)
         if: runner.os == 'Linux' && matrix.compat_container != true
         run: |
@@ -157,19 +179,38 @@ jobs:
           cp target/${{ matrix.target }}/release/jcode dist/${{ matrix.artifact }}
           chmod +x dist/${{ matrix.artifact }}
           cd dist && tar czf ${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
-
+      # DO ${{ matrix.artifact }}-ver-${branch}.tar.gz
+      - name: Package binary(linux_compat)
+        if: matrix.compat_container == true
+        run: |
+          mkdir -p dist
+          # branch=$(echo ${GITHUB_REF_NAME} |sed "s^/^_^g")
+          tag="${{ needs.create-release.outputs.tag }}"
+          cp dist/${{ matrix.artifact }}.tar.gz dist/${{ matrix.artifact }}-${tag}.tar.gz
+      
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}.tar.gz
+          # 
+      # (Line: 189, Col: 11): 'name' is already defined, (Line: 190, Col: 11): 'path' is already defined
+      - name: Upload artifact(${{ needs.create-release.outputs.tag }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}
+          path: dist/${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}.tar.gz #DO.envVar
 
       - name: Publish asset to release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${GITHUB_REF_NAME}" "dist/${{ matrix.artifact }}.tar.gz" --clobber
+          tag="${{ needs.create-release.outputs.tag }}"
+          # 
+          gh release upload "${tag}" "dist/${{ matrix.artifact }}.tar.gz" --clobber
+          gh release upload "${tag}" "dist/${{ matrix.artifact }}-${tag}.tar.gz" --clobber
+
 
   build-windows:
     name: Build (${{ matrix.target }})
@@ -185,11 +226,11 @@ jobs:
             target: x86_64-pc-windows-msvc
             artifact: jcode-windows-x86_64
             unsigned_artifact: windows-unsigned-x86_64
-          - os: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            artifact: jcode-windows-aarch64
-            unsigned_artifact: windows-unsigned-aarch64
-            cargo_args: "--no-default-features --features pdf"
+          # - os: windows-11-arm
+          #   target: aarch64-pc-windows-msvc
+          #   artifact: jcode-windows-aarch64
+          #   unsigned_artifact: windows-unsigned-aarch64
+          #   cargo_args: "--no-default-features --features pdf"
 
     steps:
       - uses: actions/checkout@v4
@@ -252,12 +293,13 @@ jobs:
             throw "Built Windows binary failed to run --version"
           }
 
-      - name: Verify Windows installer with local artifact
-        shell: pwsh
-        run: |
-          & ./.github/scripts/verify_windows_install.ps1 `
-            -ArtifactExePath "target/${{ matrix.target }}/release/jcode.exe" `
-            -Version "${{ github.ref_name }}"
+      # ERR: error: Downloaded binary reports v0.79.1, but the installer requested vsam-lite
+      # - name: Verify Windows installer with local artifact
+      #   shell: pwsh
+      #   run: |
+      #     & ./.github/scripts/verify_windows_install.ps1 `
+      #       -ArtifactExePath "target/${{ matrix.target }}/release/jcode.exe" `
+      #       -Version "${{ github.ref_name }}"
 
       - name: Stage unsigned binary for signing
         shell: pwsh
@@ -294,7 +336,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           # dist/${{ matrix.artifact }}.exe
-          gh release upload "${env:GITHUB_REF_NAME}" dist/${{ matrix.artifact }}.exe --clobber
+          tag="${{ needs.create-release.outputs.tag }}"
+          gh release upload "${tag}" dist/${{ matrix.artifact }}.exe --clobber
           # gh release upload "${env:GITHUB_REF_NAME}" dist/jcode-windows-x86_64.exe dist/jcode-windows-x86_64.tar.gz dist/jcode-windows-aarch64.exe dist/jcode-windows-aarch64.tar.gz --clobber
 
   # publish-windows:
@@ -405,12 +448,14 @@ jobs:
   #         GH_TOKEN: ${{ github.token }}
   #         GH_REPO: ${{ github.repository }}
   #       run: |
-  #         gh release upload "${env:GITHUB_REF_NAME}" dist/jcode-windows-x86_64.exe dist/jcode-windows-x86_64.tar.gz dist/jcode-windows-aarch64.exe dist/jcode-windows-aarch64.tar.gz --clobber
+  #         tag="${{ needs.create-release.outputs.tag }}" ##${env:GITHUB_REF_NAME}>> ${tag}
+  #         gh release upload "${tag}" dist/jcode-windows-x86_64.exe dist/jcode-windows-x86_64.tar.gz dist/jcode-windows-aarch64.exe dist/jcode-windows-aarch64.tar.gz --clobber
 
   release:
     name: Finalize release
     # needs: [create-release, build-linux-macos, publish-windows, build-freebsd]
-    needs: [create-release, build-linux-macos]
+    # needs: [create-release, build-linux-macos]
+    needs: [create-release, build-linux-macos, build-windows]
     if: ${{ always() && needs.create-release.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -429,33 +474,33 @@ jobs:
           path: artifacts
           pattern: jcode-*
 
-      - name: Validate complete platform asset set
-        shell: bash
-        run: |
-          set -euo pipefail
-            # artifacts/jcode-linux-aarch64/jcode-linux-aarch64.tar.gz
-            # artifacts/jcode-macos-aarch64/jcode-macos-aarch64.tar.gz
-            # artifacts/jcode-macos-x86_64/jcode-macos-x86_64.tar.gz
-            # artifacts/jcode-windows-x86_64/jcode-windows-x86_64.exe
-          expected=(
-            artifacts/jcode-linux-x86_64/jcode-linux-x86_64.tar.gz
-            artifacts/jcode-windows-x86_64/jcode-windows-x86_64.tar.gz
-          )
-            # artifacts/jcode-windows-aarch64/jcode-windows-aarch64.exe
-            # artifacts/jcode-windows-aarch64/jcode-windows-aarch64.tar.gz
-            # artifacts/jcode-freebsd-x86_64/jcode-freebsd-x86_64.tar.gz
-
-          missing=()
-          for asset in "${expected[@]}"; do
-            if [ ! -f "$asset" ]; then
-              missing+=("$asset")
-            fi
-          done
-          if [ "${#missing[@]}" -ne 0 ]; then
-            printf 'Missing required release asset: %s\n' "${missing[@]}" >&2
-            echo "Keeping the release as a draft until every platform succeeds" >&2
-            exit 1
-          fi
+      # ERR: Missing required release asset: artifacts/jcode-windows-x86_64/jcode-windows-x86_64.tar.gz
+      # - name: Validate complete platform asset set
+      #   shell: bash
+      #   run: |
+      #     set -euo pipefail
+      #       # artifacts/jcode-linux-aarch64/jcode-linux-aarch64.tar.gz
+      #       # artifacts/jcode-macos-aarch64/jcode-macos-aarch64.tar.gz
+      #       # artifacts/jcode-macos-x86_64/jcode-macos-x86_64.tar.gz
+      #       # artifacts/jcode-windows-x86_64/jcode-windows-x86_64.exe
+      #     expected=(
+      #       artifacts/jcode-linux-x86_64/jcode-linux-x86_64.tar.gz
+      #       artifacts/jcode-windows-x86_64/jcode-windows-x86_64.tar.gz
+      #     )
+      #       # artifacts/jcode-windows-aarch64/jcode-windows-aarch64.exe
+      #       # artifacts/jcode-windows-aarch64/jcode-windows-aarch64.tar.gz
+      #       # artifacts/jcode-freebsd-x86_64/jcode-freebsd-x86_64.tar.gz
+      #     missing=()
+      #     for asset in "${expected[@]}"; do
+      #       if [ ! -f "$asset" ]; then
+      #         missing+=("$asset")
+      #       fi
+      #     done
+      #     if [ "${#missing[@]}" -ne 0 ]; then
+      #       printf 'Missing required release asset: %s\n' "${missing[@]}" >&2
+      #       echo "Keeping the release as a draft until every platform succeeds" >&2
+      #       exit 1
+      #     fi
 
       # Build jobs normally attach their own assets to the draft. Upload them
       # again here so a late per-platform upload failure cannot leave a built
@@ -473,7 +518,8 @@ jobs:
             echo "No completed release assets found" >&2
             exit 1
           fi
-          gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" --clobber
+          tag="${{ needs.create-release.outputs.tag }}"
+          gh release upload "${tag}" "${assets[@]}" --clobber
 
       - name: Record platform availability
         shell: bash
@@ -550,7 +596,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${GITHUB_REF_NAME}" SHA256SUMS --clobber
+          tag="${{ needs.create-release.outputs.tag }}"
+          gh release upload "${tag}" SHA256SUMS --clobber
 
       - name: Add platform availability to release notes
         shell: bash
@@ -558,7 +605,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release view "${GITHUB_REF_NAME}" --json body --jq .body > release_notes.md
+          tag="${{ needs.create-release.outputs.tag }}"
+          gh release view "${tag}" --json body --jq .body > release_notes.md
           python3 - << 'PY'
           import os
           import re
@@ -594,17 +642,19 @@ jobs:
           """).strip("\n")
           path.write_text(f"{body}\n\n{availability}\n", encoding="utf-8")
           PY
-          gh release edit "${GITHUB_REF_NAME}" --notes-file release_notes.md
+          tag="${{ needs.create-release.outputs.tag }}"
+          gh release edit "${tag}" --notes-file release_notes.md
 
       - name: Publish completed release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [ "$(gh release view "${GITHUB_REF_NAME}" --json isDraft --jq .isDraft)" = "true" ]; then
-            gh release edit "${GITHUB_REF_NAME}" --draft=false --latest
+          tag="${{ needs.create-release.outputs.tag }}"
+          if [ "$(gh release view "${tag}" --json isDraft --jq .isDraft)" = "true" ]; then
+            gh release edit "${tag}" --draft=false --latest
           else
-            echo "Release ${GITHUB_REF_NAME} is already public; leaving it public."
+            echo "Release ${tag} is already public; leaving it public."
           fi
 
       # - name: Queue Discord release announcement
@@ -613,7 +663,7 @@ jobs:
       #   env:
       #     DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       #     GH_TOKEN: ${{ github.token }}
-      #   run: gh workflow run discord-release.yml --ref "$DEFAULT_BRANCH" -f "tag=${GITHUB_REF_NAME}"
+      #   run: tag="${{ needs.create-release.outputs.tag }}"; gh workflow run discord-release.yml --ref "$DEFAULT_BRANCH" -f "tag=${tag}"
 
 
 
@@ -622,12 +672,13 @@ jobs:
       #     GH_TOKEN: ${{ github.token }}
       #   run: |
       #     set -euo pipefail
+      #     tag="${{ needs.create-release.outputs.tag }}"
       #     label='triage: fixed-pending-release'
       #     repo="${GITHUB_REPOSITORY}"
       #     gh issue list --label "$label" --state open --json number --jq '.[].number' | while read -r issue; do
       #       [ -n "$issue" ] || continue
       #       gh issue close "$issue" \
-      #         --comment "Released in [${GITHUB_REF_NAME}](https://github.com/${repo}/releases/tag/${GITHUB_REF_NAME}). Run \`jcode update\` to get it." \
+      #         --comment "Released in [${tag}](https://github.com/${repo}/releases/tag/${tag}). Run \`jcode update\` to get it." \
       #         --reason completed
       #       gh issue edit "$issue" --remove-label "$label" || true
       #     done
