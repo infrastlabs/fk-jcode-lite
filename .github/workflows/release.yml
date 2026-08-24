@@ -186,8 +186,12 @@ jobs:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}.tar.gz
           # 
-          # name: ${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}
-          # path: dist/${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}.tar.gz #DO.envVar
+      # (Line: 189, Col: 11): 'name' is already defined, (Line: 190, Col: 11): 'path' is already defined
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}
+          path: dist/${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}.tar.gz #DO.envVar
 
       - name: Publish asset to release
         shell: bash
