@@ -203,19 +203,19 @@ jobs:
           tag="${{ needs.create-release.outputs.tag }}"
           cp dist/${{ matrix.artifact }}.tar.gz dist/${{ matrix.artifact }}-${tag}.tar.gz
       
-      # Upload @build-dtl-page
-      # - name: Upload artifact
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: ${{ matrix.artifact }}
-      #     path: dist/${{ matrix.artifact }}.tar.gz
-      #     # 
-      # # (Line: 189, Col: 11): 'name' is already defined, (Line: 190, Col: 11): 'path' is already defined
-      # - name: Upload artifact(${{ needs.create-release.outputs.tag }})
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: ${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}
-      #     path: dist/${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}.tar.gz #DO.envVar
+      # Upload @build-dtl-page; last-step-shasums-used
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}.tar.gz
+          # 
+      # (Line: 189, Col: 11): 'name' is already defined, (Line: 190, Col: 11): 'path' is already defined
+      - name: Upload artifact(${{ needs.create-release.outputs.tag }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}
+          path: dist/${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}.tar.gz #DO.envVar
 
       - name: Publish asset to release
         shell: bash
