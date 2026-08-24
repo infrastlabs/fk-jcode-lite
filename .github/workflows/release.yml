@@ -292,130 +292,130 @@ jobs:
       #         throw "Windows smoke test failed: $testName"
       #       }
       #     }
-
-  publish-windows:
-    name: Sign and publish Windows assets
-    runs-on: windows-latest
-    needs: [create-release, build-windows]
-    # Missing signing configuration or a signing outage suppresses Windows
-    # assets for this release without blocking Linux and macOS publication.
-    continue-on-error: true
-    timeout-minutes: 30
-    permissions:
-      contents: write
-      id-token: write
-    env:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }} #TODO
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      WINDOWS_SIGNING_ENDPOINT: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
-      WINDOWS_SIGNING_ACCOUNT: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
-      WINDOWS_SIGNING_CERTIFICATE_PROFILE: ${{ vars.WINDOWS_SIGNING_CERTIFICATE_PROFILE }}
-      WINDOWS_SIGNING_REQUIRED: ${{ vars.WINDOWS_SIGNING_REQUIRED }}
-    steps:
-      - name: Download unsigned Windows binaries
-        uses: actions/download-artifact@v4
-        with:
-          pattern: windows-unsigned-*
-          path: artifacts
-
-      - name: Determine signing mode
-        id: signing
-        shell: pwsh
-        run: |
-          $requiredValues = @(
-            $env:AZURE_CLIENT_ID,
-            $env:AZURE_TENANT_ID,
-            $env:AZURE_SUBSCRIPTION_ID,
-            $env:WINDOWS_SIGNING_ENDPOINT,
-            $env:WINDOWS_SIGNING_ACCOUNT,
-            $env:WINDOWS_SIGNING_CERTIFICATE_PROFILE
-          )
-          $configured = -not ($requiredValues | Where-Object { [string]::IsNullOrWhiteSpace($_) })
-          "enabled=$($configured.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-
-          $signingRequired = $env:WINDOWS_SIGNING_REQUIRED -ne 'false'
-          if (-not $configured -and $signingRequired) {
-            throw 'Windows signing is required, but Azure Artifact Signing configuration is incomplete. See docs/WINDOWS.md.'
-          }
-          if (-not $configured) {
-            Write-Warning 'Publishing unsigned Windows assets because WINDOWS_SIGNING_REQUIRED=false. This override is not suitable for an official Windows release.'
-          }
-
-      - name: Azure login with GitHub OIDC
-        if: steps.signing.outputs.enabled == 'true'
-        uses: azure/login@v3
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }} #TODO
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Authenticode-sign Windows binaries
-        if: steps.signing.outputs.enabled == 'true'
-        uses: azure/artifact-signing-action@v2
-        with:
-          endpoint: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.WINDOWS_SIGNING_CERTIFICATE_PROFILE }}
-          files: |
-            ${{ github.workspace }}\artifacts\windows-unsigned-x86_64\jcode-windows-x86_64.exe
-            ${{ github.workspace }}\artifacts\windows-unsigned-aarch64\jcode-windows-aarch64.exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-
-      - name: Verify signatures and package Windows assets
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $assets = @(
-            @{ Name = 'jcode-windows-x86_64'; Path = 'artifacts/windows-unsigned-x86_64/jcode-windows-x86_64.exe' },
-            @{ Name = 'jcode-windows-aarch64'; Path = 'artifacts/windows-unsigned-aarch64/jcode-windows-aarch64.exe' }
-          )
-
-          foreach ($asset in $assets) {
-            $source = (Resolve-Path -LiteralPath $asset.Path).Path
-            if ('${{ steps.signing.outputs.enabled }}' -eq 'true') {
-              $signature = Get-AuthenticodeSignature -LiteralPath $source
-              if ($signature.Status -ne 'Valid') {
-                throw "Authenticode verification failed for $($asset.Name): $($signature.Status) $($signature.StatusMessage)"
-              }
-              Write-Host "Signed by: $($signature.SignerCertificate.Subject)"
-            }
-
-            $destination = Join-Path dist "$($asset.Name).exe"
-            Copy-Item -LiteralPath $source -Destination $destination -Force
-            tar -czf "dist/$($asset.Name).tar.gz" -C dist "$($asset.Name).exe"
-          }
-
-      - name: Upload final Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: jcode-windows-x86_64
-          path: |
-            dist/jcode-windows-x86_64.exe
-            dist/jcode-windows-x86_64.tar.gz
-
-      - name: Upload final Windows ARM64 artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: jcode-windows-aarch64
-          path: |
-            dist/jcode-windows-aarch64.exe
-            dist/jcode-windows-aarch64.tar.gz
-
-      - name: Publish Windows assets to release
+      - name: Publish Windows assets to release(windows-unsigned)
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release upload "${env:GITHUB_REF_NAME}" dist/jcode-windows-x86_64.exe dist/jcode-windows-x86_64.tar.gz dist/jcode-windows-aarch64.exe dist/jcode-windows-aarch64.tar.gz --clobber
+          # dist/${{ matrix.artifact }}.exe
+          gh release upload "${env:GITHUB_REF_NAME}" dist/${{ matrix.artifact }}.exe --clobber
+          # gh release upload "${env:GITHUB_REF_NAME}" dist/jcode-windows-x86_64.exe dist/jcode-windows-x86_64.tar.gz dist/jcode-windows-aarch64.exe dist/jcode-windows-aarch64.tar.gz --clobber
+
+  # publish-windows:
+  #   name: Sign and publish Windows assets
+  #   runs-on: windows-latest
+  #   needs: [create-release, build-windows]
+  #   # Missing signing configuration or a signing outage suppresses Windows
+  #   # assets for this release without blocking Linux and macOS publication.
+  #   continue-on-error: true
+  #   timeout-minutes: 30
+  #   permissions:
+  #     contents: write
+  #     id-token: write
+  #   env:
+  #     AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }} #TODO
+  #     AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  #     AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  #     WINDOWS_SIGNING_ENDPOINT: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
+  #     WINDOWS_SIGNING_ACCOUNT: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
+  #     WINDOWS_SIGNING_CERTIFICATE_PROFILE: ${{ vars.WINDOWS_SIGNING_CERTIFICATE_PROFILE }}
+  #     WINDOWS_SIGNING_REQUIRED: ${{ vars.WINDOWS_SIGNING_REQUIRED }}
+  #   steps:
+  #     - name: Download unsigned Windows binaries
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         pattern: windows-unsigned-*
+  #         path: artifacts
+  #     - name: Determine signing mode
+  #       id: signing
+  #       shell: pwsh
+  #       run: |
+  #         $requiredValues = @(
+  #           $env:AZURE_CLIENT_ID,
+  #           $env:AZURE_TENANT_ID,
+  #           $env:AZURE_SUBSCRIPTION_ID,
+  #           $env:WINDOWS_SIGNING_ENDPOINT,
+  #           $env:WINDOWS_SIGNING_ACCOUNT,
+  #           $env:WINDOWS_SIGNING_CERTIFICATE_PROFILE
+  #         )
+  #         $configured = -not ($requiredValues | Where-Object { [string]::IsNullOrWhiteSpace($_) })
+  #         "enabled=$($configured.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+  #         $signingRequired = $env:WINDOWS_SIGNING_REQUIRED -ne 'false'
+  #         if (-not $configured -and $signingRequired) {
+  #           throw 'Windows signing is required, but Azure Artifact Signing configuration is incomplete. See docs/WINDOWS.md.'
+  #         }
+  #         if (-not $configured) {
+  #           Write-Warning 'Publishing unsigned Windows assets because WINDOWS_SIGNING_REQUIRED=false. This override is not suitable for an official Windows release.'
+  #         }
+  #     - name: Azure login with GitHub OIDC
+  #       if: steps.signing.outputs.enabled == 'true'
+  #       uses: azure/login@v3
+  #       with:
+  #         client-id: ${{ secrets.AZURE_CLIENT_ID }} #TODO
+  #         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+  #         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  #     - name: Authenticode-sign Windows binaries
+  #       if: steps.signing.outputs.enabled == 'true'
+  #       uses: azure/artifact-signing-action@v2
+  #       with:
+  #         endpoint: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
+  #         signing-account-name: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
+  #         certificate-profile-name: ${{ vars.WINDOWS_SIGNING_CERTIFICATE_PROFILE }}
+  #         files: |
+  #           ${{ github.workspace }}\artifacts\windows-unsigned-x86_64\jcode-windows-x86_64.exe
+  #           ${{ github.workspace }}\artifacts\windows-unsigned-aarch64\jcode-windows-aarch64.exe
+  #         file-digest: SHA256
+  #         timestamp-rfc3161: http://timestamp.acs.microsoft.com
+  #         timestamp-digest: SHA256
+  #     - name: Verify signatures and package Windows assets
+  #       shell: pwsh
+  #       run: |
+  #         New-Item -ItemType Directory -Force -Path dist | Out-Null
+  #         $assets = @(
+  #           @{ Name = 'jcode-windows-x86_64'; Path = 'artifacts/windows-unsigned-x86_64/jcode-windows-x86_64.exe' },
+  #           @{ Name = 'jcode-windows-aarch64'; Path = 'artifacts/windows-unsigned-aarch64/jcode-windows-aarch64.exe' }
+  #         )
+  #         foreach ($asset in $assets) {
+  #           $source = (Resolve-Path -LiteralPath $asset.Path).Path
+  #           if ('${{ steps.signing.outputs.enabled }}' -eq 'true') {
+  #             $signature = Get-AuthenticodeSignature -LiteralPath $source
+  #             if ($signature.Status -ne 'Valid') {
+  #               throw "Authenticode verification failed for $($asset.Name): $($signature.Status) $($signature.StatusMessage)"
+  #             }
+  #             Write-Host "Signed by: $($signature.SignerCertificate.Subject)"
+  #           }
+
+  #           $destination = Join-Path dist "$($asset.Name).exe"
+  #           Copy-Item -LiteralPath $source -Destination $destination -Force
+  #           tar -czf "dist/$($asset.Name).tar.gz" -C dist "$($asset.Name).exe"
+  #         }
+  #     - name: Upload final Windows artifacts
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: jcode-windows-x86_64
+  #         path: |
+  #           dist/jcode-windows-x86_64.exe
+  #           dist/jcode-windows-x86_64.tar.gz
+  #     - name: Upload final Windows ARM64 artifacts
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: jcode-windows-aarch64
+  #         path: |
+  #           dist/jcode-windows-aarch64.exe
+  #           dist/jcode-windows-aarch64.tar.gz
+  #     - name: Publish Windows assets to release
+  #       shell: pwsh
+  #       env:
+  #         GH_TOKEN: ${{ github.token }}
+  #         GH_REPO: ${{ github.repository }}
+  #       run: |
+  #         gh release upload "${env:GITHUB_REF_NAME}" dist/jcode-windows-x86_64.exe dist/jcode-windows-x86_64.tar.gz dist/jcode-windows-aarch64.exe dist/jcode-windows-aarch64.tar.gz --clobber
 
   release:
     name: Finalize release
     # needs: [create-release, build-linux-macos, publish-windows, build-freebsd]
-    needs: [create-release, build-linux-macos, publish-windows]
+    needs: [create-release, build-linux-macos]
     if: ${{ always() && needs.create-release.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
