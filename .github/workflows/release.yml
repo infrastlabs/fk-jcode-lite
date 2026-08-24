@@ -20,7 +20,14 @@ jobs:
     name: Create release
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
+      - name: Get tag #ref fk-maki\.github\workflows\release.yml
+        id: tag
+        run: |
+          val=$(echo ${GITHUB_REF_NAME} |sed "s^/^_^g")
+          echo "tag=t-${val}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -166,16 +173,18 @@ jobs:
         if: matrix.compat_container == true
         run: |
           mkdir -p dist
-          branch=$(echo ${GITHUB_REF_NAME} |sed "s^/^_^g")
-          cp dist/${{ matrix.artifact }}.tar.gz dist/${{ matrix.artifact }}-ver-${branch}.tar.gz
+          # branch=$(echo ${GITHUB_REF_NAME} |sed "s^/^_^g")
+          tag="${{ needs.create-release.outputs.tag }}"
+          cp dist/${{ matrix.artifact }}.tar.gz dist/${{ matrix.artifact }}-${tag}.tar.gz
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}.tar.gz
-          # name: ${{ matrix.artifact }}-ver-${branch}
-          # path: dist/${{ matrix.artifact }}-ver-${branch}.tar.gz #TODO.envVar
+          # 
+          name: ${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}
+          path: dist/${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}.tar.gz #DO.envVar
 
       - name: Publish asset to release
         shell: bash
@@ -184,8 +193,8 @@ jobs:
         run: |
           gh release upload "${GITHUB_REF_NAME}" "dist/${{ matrix.artifact }}.tar.gz" --clobber
           # 
-          branch=$(echo ${GITHUB_REF_NAME} |sed "s^/^_^g")
-          gh release upload "${GITHUB_REF_NAME}" "dist/${{ matrix.artifact }}-ver-${branch}.tar.gz" --clobber
+          tag="${{ needs.create-release.outputs.tag }}"
+          gh release upload "${GITHUB_REF_NAME}" "dist/${{ matrix.artifact }}-${tag}.tar.gz" --clobber
 
 
   build-windows:
