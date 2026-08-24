@@ -187,7 +187,7 @@ jobs:
           path: dist/${{ matrix.artifact }}.tar.gz
           # 
       # (Line: 189, Col: 11): 'name' is already defined, (Line: 190, Col: 11): 'path' is already defined
-      - name: Upload artifact
+      - name: Upload artifact(${{ needs.create-release.outputs.tag }})
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}
