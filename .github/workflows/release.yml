@@ -35,26 +35,28 @@ jobs:
         run: |
           # body is too long (maximum is 125000 characters)
           # release not found
-          scripts/generate_release_notes.sh "${GITHUB_REF_NAME}" |head -5 > release_notes.md
-          # scripts/generate_release_notes.sh "${GITHUB_REF_NAME}" > release_notes.md
+          val=$(echo ${GITHUB_REF_NAME} |sed "s^/^_^g"); tag="t-${val}"
+          scripts/generate_release_notes.sh "${tag}" |head -5 > release_notes.md
+          # scripts/generate_release_notes.sh "${tag}" > release_notes.md
       - name: Create draft release if missing
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+          val=$(echo ${GITHUB_REF_NAME} |sed "s^/^_^g"); tag="t-${val}"
+          if ! gh release view "${tag}" >/dev/null 2>&1; then
             # quick-release.sh can race this job after pushing the tag. If it
             # creates the draft first, verify that release and continue.
-            if ! gh release create "${GITHUB_REF_NAME}" \
+            if ! gh release create "${tag}" \
               --draft \
-              --title "${GITHUB_REF_NAME}" \
+              --title "${tag}" \
               --notes-file release_notes.md; then
               sleep 2
-              gh release view "${GITHUB_REF_NAME}" >/dev/null
+              gh release view "${tag}" >/dev/null
             fi
           fi
-          gh release edit "${GITHUB_REF_NAME}" --notes-file release_notes.md
+          gh release edit "${tag}" --notes-file release_notes.md
 
   build-linux-macos:
     name: Build (${{ matrix.target }})
@@ -198,10 +200,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${GITHUB_REF_NAME}" "dist/${{ matrix.artifact }}.tar.gz" --clobber
-          # 
           tag="${{ needs.create-release.outputs.tag }}"
-          gh release upload "${GITHUB_REF_NAME}" "dist/${{ matrix.artifact }}-${tag}.tar.gz" --clobber
+          # 
+          gh release upload "${tag}" "dist/${{ matrix.artifact }}.tar.gz" --clobber
+          gh release upload "${tag}" "dist/${{ matrix.artifact }}-${tag}.tar.gz" --clobber
 
 
   build-windows:
@@ -508,7 +510,8 @@ jobs:
             echo "No completed release assets found" >&2
             exit 1
           fi
-          gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" --clobber
+          tag="${{ needs.create-release.outputs.tag }}"
+          gh release upload "${tag}" "${assets[@]}" --clobber
 
       - name: Record platform availability
         shell: bash
@@ -585,7 +588,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${GITHUB_REF_NAME}" SHA256SUMS --clobber
+          tag="${{ needs.create-release.outputs.tag }}"
+          gh release upload "${tag}" SHA256SUMS --clobber
 
       - name: Add platform availability to release notes
         shell: bash
@@ -593,7 +597,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release view "${GITHUB_REF_NAME}" --json body --jq .body > release_notes.md
+          tag="${{ needs.create-release.outputs.tag }}"
+          gh release view "${tag}" --json body --jq .body > release_notes.md
           python3 - << 'PY'
           import os
           import re
@@ -629,17 +634,19 @@ jobs:
           """).strip("\n")
           path.write_text(f"{body}\n\n{availability}\n", encoding="utf-8")
           PY
-          gh release edit "${GITHUB_REF_NAME}" --notes-file release_notes.md
+          tag="${{ needs.create-release.outputs.tag }}"
+          gh release edit "${tag}" --notes-file release_notes.md
 
       - name: Publish completed release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [ "$(gh release view "${GITHUB_REF_NAME}" --json isDraft --jq .isDraft)" = "true" ]; then
-            gh release edit "${GITHUB_REF_NAME}" --draft=false --latest
+          tag="${{ needs.create-release.outputs.tag }}"
+          if [ "$(gh release view "${tag}" --json isDraft --jq .isDraft)" = "true" ]; then
+            gh release edit "${tag}" --draft=false --latest
           else
-            echo "Release ${GITHUB_REF_NAME} is already public; leaving it public."
+            echo "Release ${tag} is already public; leaving it public."
           fi
 
       # - name: Queue Discord release announcement
@@ -648,7 +655,7 @@ jobs:
       #   env:
       #     DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       #     GH_TOKEN: ${{ github.token }}
-      #   run: gh workflow run discord-release.yml --ref "$DEFAULT_BRANCH" -f "tag=${GITHUB_REF_NAME}"
+      #   run: tag="${{ needs.create-release.outputs.tag }}"; gh workflow run discord-release.yml --ref "$DEFAULT_BRANCH" -f "tag=${tag}"
 
 
 
@@ -657,12 +664,13 @@ jobs:
       #     GH_TOKEN: ${{ github.token }}
       #   run: |
       #     set -euo pipefail
+      #     tag="${{ needs.create-release.outputs.tag }}"
       #     label='triage: fixed-pending-release'
       #     repo="${GITHUB_REPOSITORY}"
       #     gh issue list --label "$label" --state open --json number --jq '.[].number' | while read -r issue; do
       #       [ -n "$issue" ] || continue
       #       gh issue close "$issue" \
-      #         --comment "Released in [${GITHUB_REF_NAME}](https://github.com/${repo}/releases/tag/${GITHUB_REF_NAME}). Run \`jcode update\` to get it." \
+      #         --comment "Released in [${tag}](https://github.com/${repo}/releases/tag/${tag}). Run \`jcode update\` to get it." \
       #         --reason completed
       #       gh issue edit "$issue" --remove-label "$label" || true
       #     done
