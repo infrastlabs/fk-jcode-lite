@@ -161,12 +161,21 @@ jobs:
           cp target/${{ matrix.target }}/release/jcode dist/${{ matrix.artifact }}
           chmod +x dist/${{ matrix.artifact }}
           cd dist && tar czf ${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
-
+      # DO ${{ matrix.artifact }}-ver-${branch}.tar.gz
+      - name: Package binary(linux_compat)
+        if: matrix.compat_container == true
+        run: |
+          mkdir -p dist
+          branch=$(echo ${GITHUB_REF_NAME} |sed "s^/^_^g")
+          cp dist/${{ matrix.artifact }}.tar.gz dist/${{ matrix.artifact }}-ver-${branch}.tar.gz
+      
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}.tar.gz
+          # name: ${{ matrix.artifact }}-ver-${branch}
+          # path: dist/${{ matrix.artifact }}-ver-${branch}.tar.gz #TODO.envVar
 
       - name: Publish asset to release
         shell: bash
@@ -174,6 +183,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${GITHUB_REF_NAME}" "dist/${{ matrix.artifact }}.tar.gz" --clobber
+          # 
+          branch=$(echo ${GITHUB_REF_NAME} |sed "s^/^_^g")
+          gh release upload "${GITHUB_REF_NAME}" "dist/${{ matrix.artifact }}-ver-${branch}.tar.gz" --clobber
+
 
   build-windows:
     name: Build (${{ matrix.target }})
