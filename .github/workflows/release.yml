@@ -186,8 +186,8 @@ jobs:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}.tar.gz
           # 
-          name: ${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}
-          path: dist/${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}.tar.gz #DO.envVar
+          # name: ${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}
+          # path: dist/${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}.tar.gz #DO.envVar
 
       - name: Publish asset to release
         shell: bash
