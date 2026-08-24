@@ -116,31 +116,45 @@ jobs:
       #nux.ERR; win.OK ##Post run this: ERR Permission denied; ref fk-maki/fk-msb:same usage
       # /usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/fk-jcode-lite/fk-jcode-lite --files-from manifest.txt --use-compress-program zstdmt
       # /usr/bin/tar: target/linux-compat/release/incremental/build_script_build-0pegicw4rqmok/s-hlmqfk8dh8-0cxxiqn.lock: Cannot open: Permission denied
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-          cache-all-crates: "true"
-          # 
-          # https://chat.deepseek.com/a/chat/s/973434ab-d0e4-4e6a-81bc-e57af8452f7a
-          # Solution 1: Exclude Incremental Files (Recommended)
-          # Exclude incremental files which can cause permission issues
-          cache-on-failure: "true"
-          # Solution 3: Use Cache Action with Custom Paths
-          # Specify which targets to cache #The action automatically handles permissions for most files
-          cache-targets: "true"
+      # - uses: Swatinem/rust-cache@v2
+      #   with:
+      #     key: ${{ matrix.target }}
+      #     cache-all-crates: "true"
+      #     # 
+      #     # https://chat.deepseek.com/a/chat/s/973434ab-d0e4-4e6a-81bc-e57af8452f7a
+      #     # Solution 1: Exclude Incremental Files (Recommended)
+      #     # Exclude incremental files which can cause permission issues
+      #     cache-on-failure: "true"
+      #     # Solution 3: Use Cache Action with Custom Paths
+      #     # Specify which targets to cache #The action automatically handles permissions for most files
+      #     cache-targets: "true"
       # Solution 1..5 >> 6:allInOne
       # Solution 5: Use a Different Cache Strategy
-      # - name: Cache cargo registry
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: |
-      #       ~/.cargo/registry
-      #       ~/.cargo/git
-      #       target/release
-      #     key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-cargo-
-      
+      # If the above doesn't work, consider using a simpler cache approach: ##Solution 1..4试过全不行,改这个
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            # target/release
+            # 关键修正：把 ${{ matrix.target }} 动态拼进去！
+            # # 只缓存 deps 和 build 目录，不缓存整个 release（避免把最终大二进制包进去）
+            target/${{ matrix.target }}/release/deps
+            target/${{ matrix.target }}/release/build
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+        # 为什么这么改最稳？  https://chat.deepseek.com/a/chat/s/973434ab-d0e4-4e6a-81bc-e57af8452f7a
+        # 01|彻底根除权限问题：
+        #   通过 find ... -delete 在打包前删掉所有 .lock 文件，tar 再也不会遇到 Cannot open: Permission denied，缓存 100% 保存成功。
+        # 02|缓存体积暴减 70%+：
+        #   1.不缓存 incremental（这玩意儿最大且没用）。
+        #   2.不缓存最终的二进制文件（jcode 可执行文件），因为 CI 里通常只需要测试或打包，没必要把几百 MB 的二进制塞进缓存。
+        #   3.只留 deps 和 build，这包含了所有第三方依赖编译好的 .rlib/.rmeta，重编你的业务代码时能省下大量编译依赖的时间。
+        # 03|命中率极高：
+        #   只要 Cargo.lock 没变，这套缓存就能直接恢复所有依赖的编译产物。你的业务代码变了？没关系，Cargo 会利用缓存的依赖产物只重编你改动的部分，依然是增量编译的速度。
+
       - name: Install mold linker (Linux)
         if: runner.os == 'Linux' && matrix.compat_container != true
         run: |
