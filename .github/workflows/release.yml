@@ -111,22 +111,7 @@ jobs:
         uses: mozilla-actions/sccache-action@v0.0.7
         continue-on-error: true
         id: sccache
-      
-      # https://chat.deepseek.com/a/chat/s/973434ab-d0e4-4e6a-81bc-e57af8452f7a
-      # Solution 4: Fix Permissions Before Caching
-      - name: Fix permissions
-        run: |
-          chmod -R u+w target/ 2>/dev/null || true
-          chmod -R 755 target/ 2>/dev/null || true
-          exit 0
-      # Solution 6: Complete Working Example
-      - name: Clean up for cache
-        run: |
-          # Remove problematic lock files before caching
-          find target -name "*.lock" -type f -delete 2>/dev/null || true
-          # Make sure all files are readable
-          chmod -R u+rw target/ 2>/dev/null || true
-          exit 0
+
       #nux.ERR; win.OK ##Post run this: ERR Permission denied; ref fk-maki/fk-msb:same usage
       # /usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/fk-jcode-lite/fk-jcode-lite --files-from manifest.txt --use-compress-program zstdmt
       # /usr/bin/tar: target/linux-compat/release/incremental/build_script_build-0pegicw4rqmok/s-hlmqfk8dh8-0cxxiqn.lock: Cannot open: Permission denied
@@ -196,7 +181,7 @@ jobs:
           cp target/${{ matrix.target }}/release/jcode dist/${{ matrix.artifact }}
           chmod +x dist/${{ matrix.artifact }}
           cd dist && tar czf ${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
-      # DO ${{ matrix.artifact }}-ver-${branch}.tar.gz
+      # DO ${{ matrix.artifact }}-${tag}.tar.gz
       - name: Package binary(linux_compat)
         if: matrix.compat_container == true
         run: |
@@ -205,18 +190,19 @@ jobs:
           tag="${{ needs.create-release.outputs.tag }}"
           cp dist/${{ matrix.artifact }}.tar.gz dist/${{ matrix.artifact }}-${tag}.tar.gz
       
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}.tar.gz
-          # 
-      # (Line: 189, Col: 11): 'name' is already defined, (Line: 190, Col: 11): 'path' is already defined
-      - name: Upload artifact(${{ needs.create-release.outputs.tag }})
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}
-          path: dist/${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}.tar.gz #DO.envVar
+      # Upload @build-dtl-page
+      # - name: Upload artifact
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: ${{ matrix.artifact }}
+      #     path: dist/${{ matrix.artifact }}.tar.gz
+      #     # 
+      # # (Line: 189, Col: 11): 'name' is already defined, (Line: 190, Col: 11): 'path' is already defined
+      # - name: Upload artifact(${{ needs.create-release.outputs.tag }})
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: ${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}
+      #     path: dist/${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}.tar.gz #DO.envVar
 
       - name: Publish asset to release
         shell: bash
@@ -228,7 +214,23 @@ jobs:
           gh release upload "${tag}" "dist/${{ matrix.artifact }}.tar.gz" --clobber
           gh release upload "${tag}" "dist/${{ matrix.artifact }}-${tag}.tar.gz" --clobber
 
-
+      # set@botom: pre-posts-call of Swatinem/rust-cache@v2
+      # https://chat.deepseek.com/a/chat/s/973434ab-d0e4-4e6a-81bc-e57af8452f7a
+      # Solution 4: Fix Permissions Before Caching
+      - name: Fix permissions
+        run: |
+          chmod -R u+w target/ 2>/dev/null || true
+          chmod -R 755 target/ 2>/dev/null || true
+          exit 0
+      # Solution 6: Complete Working Example
+      - name: Clean up for cache
+        run: |
+          # Remove problematic lock files before caching
+          find target -name "*.lock" -type f -delete 2>/dev/null || true
+          # Make sure all files are readable
+          chmod -R u+rw target/ 2>/dev/null || true
+          exit 0
+      
   build-windows:
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
@@ -323,12 +325,18 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/jcode.exe" "dist/${{ matrix.artifact }}.exe"
+          # 
+          # ref DO ${{ matrix.artifact }}-${tag}.tar.gz
+          # - name: Package binary(linux_compat)
+          tar -czf "dist/${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}.tar.gz" -C dist "${{ matrix.artifact }}.exe"
+      
 
       - name: Upload unsigned binary for signing
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.unsigned_artifact }}
-          path: dist/${{ matrix.artifact }}.exe
+          # path: dist/${{ matrix.artifact }}.exe
+          path: dist/${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}.tar.gz
 
       # - name: Run advisory Windows runtime smoke tests (x64)
       #   if: matrix.target == 'x86_64-pc-windows-msvc'
@@ -339,7 +347,6 @@ jobs:
       #       'provider_behavior::test_socket_model_cycle_supported_models',
       #       'provider_behavior::test_model_switch_resets_provider_session'
       #     )
-
       #     foreach ($testName in $tests) {
       #       & cargo test --locked --target ${{ matrix.target }} --test e2e $testName -- --exact --nocapture
       #       if ($LASTEXITCODE -ne 0) {
@@ -353,9 +360,11 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           # dist/${{ matrix.artifact }}.exe
-          # tag="${{ needs.create-release.outputs.tag }}" ##ERR@win
-          gh release upload "${{ needs.create-release.outputs.tag }}" dist/${{ matrix.artifact }}.exe --clobber
           # gh release upload "${env:GITHUB_REF_NAME}" dist/jcode-windows-x86_64.exe dist/jcode-windows-x86_64.tar.gz dist/jcode-windows-aarch64.exe dist/jcode-windows-aarch64.tar.gz --clobber
+          # 
+          # tag="${{ needs.create-release.outputs.tag }}" ##ERR@win
+          # gh release upload "${{ needs.create-release.outputs.tag }}" dist/${{ matrix.artifact }}.exe --clobber
+          gh release upload "${{ needs.create-release.outputs.tag }}" dist/${{ matrix.artifact }}-${{ needs.create-release.outputs.tag }}.tar.gz --clobber
 
   # publish-windows:
   #   name: Sign and publish Windows assets
