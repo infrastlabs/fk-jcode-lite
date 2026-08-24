@@ -107,6 +107,7 @@ jobs:
       #     targets: aarch64-unknown-linux-gnu
       #     components: rust-src
 
+      # sccache for arm64|if: matrix.compat_container != true
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.7
         continue-on-error: true
@@ -121,13 +122,25 @@ jobs:
           cache-all-crates: "true"
           # 
           # https://chat.deepseek.com/a/chat/s/973434ab-d0e4-4e6a-81bc-e57af8452f7a
-          # Solution 3: Use Cache Action with Custom Paths
-          # Specify which targets to cache #The action automatically handles permissions for most files
-          cache-targets: "true"
           # Solution 1: Exclude Incremental Files (Recommended)
           # Exclude incremental files which can cause permission issues
           cache-on-failure: "true"
-          
+          # Solution 3: Use Cache Action with Custom Paths
+          # Specify which targets to cache #The action automatically handles permissions for most files
+          cache-targets: "true"
+      # Solution 1..5 >> 6:allInOne
+      # Solution 5: Use a Different Cache Strategy
+      # - name: Cache cargo registry
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: |
+      #       ~/.cargo/registry
+      #       ~/.cargo/git
+      #       target/release
+      #     key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-cargo-
+      
       - name: Install mold linker (Linux)
         if: runner.os == 'Linux' && matrix.compat_container != true
         run: |
@@ -216,20 +229,29 @@ jobs:
 
       # set@botom: pre-posts-call of Swatinem/rust-cache@v2
       # https://chat.deepseek.com/a/chat/s/973434ab-d0e4-4e6a-81bc-e57af8452f7a
+      # Solution 2: Clean Incremental Files Before Caching
+      - name: Clean incremental cache files
+        run: |
+          find target -name "*.lock" -type f |sort |tail -10 #view
+          find target -name "*.lock" -type f |sort |tail -5 |while read one; do ls -lh $one; done
+          # 
+          find target -name "*.lock" -type f -delete 2>/dev/null || true
+          find target -type d -name "incremental" -exec rm -rf {} + 2>/dev/null || true
+          exit 0
       # Solution 4: Fix Permissions Before Caching
       - name: Fix permissions
         run: |
-          chmod -R u+w target/ 2>/dev/null || true
+          chmod -R u+rw target/ 2>/dev/null || true
           chmod -R 755 target/ 2>/dev/null || true
           exit 0
       # Solution 6: Complete Working Example
-      - name: Clean up for cache
-        run: |
-          # Remove problematic lock files before caching
-          find target -name "*.lock" -type f -delete 2>/dev/null || true
-          # Make sure all files are readable
-          chmod -R u+rw target/ 2>/dev/null || true
-          exit 0
+      # - name: Clean up for cache
+      #   run: |
+      #     # Remove problematic lock files before caching
+      #     find target -name "*.lock" -type f -delete 2>/dev/null || true
+      #     # Make sure all files are readable
+      #     chmod -R u+rw target/ 2>/dev/null || true
+      #     exit 0
       
   build-windows:
     name: Build (${{ matrix.target }})
