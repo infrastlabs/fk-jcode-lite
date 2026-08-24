@@ -415,7 +415,8 @@ jobs:
   release:
     name: Finalize release
     # needs: [create-release, build-linux-macos, publish-windows, build-freebsd]
-    needs: [create-release, build-linux-macos]
+    # needs: [create-release, build-linux-macos]
+    needs: [create-release, build-linux-macos, build-windows]
     if: ${{ always() && needs.create-release.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
