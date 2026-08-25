@@ -205,6 +205,13 @@ WRAPPER
 		      done
 		    fi
 		    chown "$HOST_UID:$HOST_GID" "${chown_inputs[@]}" 2>/dev/null || true
+
+		    # The build target and cargo caches were created by root inside this
+		    # container but live on host bind mounts. Re-own them to the host
+		    # runner user so the GitHub Actions actions/cache post step can pack
+		    # them; otherwise the cache tar fails with Permission denied and the
+		    # cache saves nothing (observed: 0 MB/s uploads).
+		    chown -R "$HOST_UID:$HOST_GID" "$CARGO_TARGET_DIR" /root/.cargo/registry /root/.cargo/git 2>/dev/null || true
 		  '
 
 # The docker invocation above is the last command in the script, so without an

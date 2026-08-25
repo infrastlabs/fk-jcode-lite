@@ -135,16 +135,17 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            # target/release
-            # 关键修正：把 ${{ matrix.target }} 动态拼进去！
-            # # 只缓存 deps 和 build 目录，不缓存整个 release（避免把最终大二进制包进去）
-            target/${{ matrix.target }}/release/deps
-            target/${{ matrix.target }}/release/build
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            # compat 容器构建（scripts/build_linux_compat.sh）实际读写路径：
+            # - registry/git 在 ~/.cache/jcode-linux-compat/（bind mount 进容器当 /root/.cargo/{registry,git}）
+            # - 目标目录 CARGO_TARGET_DIR=/work/target/linux-compat
+            ~/.cache/jcode-linux-compat/cargo-registry
+            ~/.cache/jcode-linux-compat/cargo-git
+            # 只缓存 deps 和 build 目录，不缓存整个 release（避免把最终大二进制包进去）
+            target/linux-compat/${{ matrix.target }}/release/deps
+            target/linux-compat/${{ matrix.target }}/release/build
+          key: ${{ runner.os }}-cargo-compat-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-compat-
         # 为什么这么改最稳？  https://chat.deepseek.com/a/chat/s/973434ab-d0e4-4e6a-81bc-e57af8452f7a
         # 01|彻底根除权限问题：
         #   通过 find ... -delete 在打包前删掉所有 .lock 文件，tar 再也不会遇到 Cannot open: Permission denied，缓存 100% 保存成功。
